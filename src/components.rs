@@ -4,3 +4,4 @@ pub mod entity;
 pub mod errors;
 pub mod file_utils;
 pub mod packets;
+pub mod replication;

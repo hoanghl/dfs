@@ -64,3 +64,4 @@ target/
 
 .env
 data/
+documents/*.bkp
