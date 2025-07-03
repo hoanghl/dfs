@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 chrono = "0.4.41"
+clap = { version = "4.5.40", features = ["derive"] }
 dotenv = "0.15.0"
 env_logger = "0.11.6"
 log = "0.4.26"

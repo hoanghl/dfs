@@ -1,50 +1,135 @@
-// TODO: HoangLe [May-02]: Implement this
-
 use std::{
-    io::Write,
-    net::{IpAddr, SocketAddr, TcpStream},
+    fs::File,
+    io::{Read, Write},
+    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
+    process::exit,
+    sync::mpsc::{Receiver, Sender},
 };
 
-use crate::components::{configs::Configs, packets::Packet};
+use log;
+
+use crate::components::{
+    configs::Configs,
+    entity::nodes::Node,
+    errors::NodeCreationError,
+    packets::{forward_packet, wait_packet, Action, Packet, PacketId},
+};
 
 // ================================================
 // Definitions
 // ================================================
-pub struct Client {
-    addr_dns: SocketAddr,
+pub struct Client<'conf> {
+    configs: &'conf Configs,
 }
 
 // ================================================
 // Implementations
 // ================================================
-impl Client {
+impl<'conf> Client<'conf> {
     pub fn new(configs: &Configs) -> Client {
-        Client {
-            addr_dns: SocketAddr::new(IpAddr::V4(configs.env_ip_dns), configs.env_port_dns),
-        }
+        Client { configs }
     }
 
-    pub fn ask_master_ip(&self) {
-        match TcpStream::connect(self.addr_dns) {
-            Ok(mut stream) => {
-                let _ = stream.write_all(Packet::create_ask_ip(self.addr_dns, None).to_bytes().as_slice());
-                match Packet::from_stream(&mut stream) {
-                    Ok(packet_reply) => match packet_reply.addr_sender {
-                        Some(addr_sender) => {
-                            log::info!("Master has address: {}", addr_sender);
-                        }
-                        None => {
-                            log::info!("Address for current Master not available");
-                        }
-                    },
-                    Err(error) => {
-                        log::error!("{}", error);
-                    }
-                }
+    pub fn send_file(&self, rcvr_r2p: &Receiver<Packet>, sndr_p2s: &Sender<Packet>) {
+        let addr_dns: SocketAddr = SocketAddr::new(IpAddr::V4(self.configs.ip_dns), self.configs.port_dns);
+        let addr_current = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), self.configs.args.port));
+
+        let mut packet: Packet;
+
+        // 1. Read file
+        log::debug!("1. Read file: {:?}", self.configs.args.path);
+
+        let mut file = match File::open(self.configs.args.path.as_ref().unwrap()) {
+            Ok(file) => file,
+            Err(err) => {
+                log::error!("Reading file: {:?}. Got err: {}", self.configs.args.path, err);
+                exit(1);
             }
-            Err(e) => {
-                log::error!("Cannot connect to: {}: {}", self.addr_dns, e);
+        };
+        let mut binary = Vec::new();
+        if let Err(err) = file.read_to_end(&mut binary) {
+            log::error!("Reading file: {:?}. Got err: {}", self.configs.args.path, err);
+            exit(1);
+        }
+
+        // 2. Ask DNS for Master's address
+        log::debug!("Ask Master address from DNS: {}", addr_dns);
+
+        forward_packet(sndr_p2s, Packet::create_ask_ip(addr_dns, addr_current.port()));
+        packet = wait_packet(rcvr_r2p);
+        if PacketId::AskIpAck != packet.packet_id {
+            log::error!("Must received AskIpAck from DNS. Got: {}", packet.packet_id);
+            exit(1);
+        }
+        let addr_master = match packet.addr_master {
+            Some(addr) => addr,
+            None => {
+                log::error!("Received packet not contain addr_master");
+                exit(1);
+            }
+        };
+
+        // 3. Connect to Master to get addr of node to send data
+        log::debug!("Connect to Master: {}", addr_master);
+
+        forward_packet(
+            sndr_p2s,
+            Packet::create_request_from_client(
+                Action::Write,
+                self.configs.args.port,
+                self.configs.args.name.as_ref().unwrap(),
+                addr_master,
+            ),
+        );
+        packet = wait_packet(rcvr_r2p);
+        if PacketId::ResponseNodeIp != packet.packet_id {
+            log::error!("Must received ResponseNodeIp from DNS. Got: {}", packet.packet_id);
+            exit(1);
+        }
+        if packet.addr_data.is_none() {
+            log::error!("Received packet not contained 'addr_data'");
+            exit(1);
+        };
+        let addr_data = packet.addr_data.unwrap();
+
+        // 4. Connect to Data node to send file
+        log::debug!(
+            "Connect to Data node to send file: {} - {:?}",
+            addr_data,
+            self.configs.args.path
+        );
+
+        forward_packet(
+            sndr_p2s,
+            Packet::create_client_upload(
+                self.configs.args.port,
+                addr_data,
+                self.configs.args.name.as_ref().unwrap(),
+                binary,
+            ),
+        );
+        packet = wait_packet(rcvr_r2p);
+        if PacketId::ClientUploadAck != packet.packet_id {
+            log::error!("Supposed to received ClientRequestAck. Got: {}", packet.packet_id);
+        }
+    }
+}
+
+impl<'a> Node for Client<'a> {
+    fn trigger_processor(
+        &mut self,
+        rcvr_r2p: &Receiver<Packet>,
+        sndr_p2s: &Sender<Packet>,
+    ) -> Result<(), NodeCreationError> {
+        match self.configs.args.action.as_ref().unwrap() {
+            Action::Read => {
+                // TODO: HoangLe [Jun-14]: Implement this
+            }
+            Action::Write => {
+                self.send_file(&rcvr_r2p, &sndr_p2s);
             }
         }
+
+        Ok(())
     }
 }

@@ -1,17 +1,55 @@
-use dotenv::dotenv;
-use std::net::Ipv4Addr;
+use std::{env, net::Ipv4Addr, process::exit, str::FromStr};
 
-use std::env;
-use std::str::FromStr;
+use clap::Parser;
+use dotenv::dotenv;
+
+use crate::components::{entity::node_roles::Role, packets::Action};
+
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+pub struct Args {
+    // ================================================
+    // General arguments
+    // ================================================
+
+    // Role
+    #[arg(short, long, value_parser = clap::value_parser!(Role))]
+    pub role: Role,
+
+    // Port of thread:receiver
+    #[arg(short, long, default_value_t = 7888)]
+    pub port: u16,
+
+    // ================================================
+    // Data/Master-specific arguments
+    // ================================================
+    #[arg(short, long, default_value = "./data")]
+    pub dir_data: String,
+
+    // ================================================
+    // Client-specific arguments
+    // ================================================
+
+    // Action
+    #[arg(long, value_parser = clap::value_parser!(Action))]
+    pub action: Option<Action>,
+
+    // File name
+    #[arg(long)]
+    pub name: Option<String>,
+
+    // Path
+    #[arg[long]]
+    pub path: Option<String>,
+}
 
 pub struct Configs {
-    pub env_ip_dns: Ipv4Addr,
-    pub env_port_receiver: u16,
-    pub env_port_dns: u16,
+    pub ip_dns: Ipv4Addr,
+    pub port_dns: u16,
     pub interval_heartbeat: u64,
-    pub timeout_channel_wait: u64,
+    pub timeout_chan_wait: u64,
 
-    pub args: Vec<String>,
+    pub args: Args,
 }
 
 impl Configs {
@@ -24,10 +62,6 @@ impl Configs {
                 .expect("Cannot parse env 'IP_DNS' to correct IP address format"),
             Err(_) => panic!("env 'IP_DNS' not existed"),
         };
-        let mut port_receiver = match env::var("PORT_RECEIVER") {
-            Ok(value) => value.parse::<u16>().unwrap(),
-            Err(_) => panic!("env 'PORT_RECEIVER' not existed"),
-        };
         let port_dns = match env::var("PORT_DNS") {
             Ok(value) => value.parse::<u16>().unwrap(),
             Err(_) => panic!("env 'PORT_DNS' not existed"),
@@ -36,14 +70,10 @@ impl Configs {
             Ok(value) => value.parse::<u64>().unwrap(),
             Err(_) => panic!("env 'HEARTBEAT_INTERVAL_SECOND' not existed"),
         };
-        let timeout_channel_wait = match env::var("TIMEOUT_CHANNEL_WAIT") {
+        let timeout_chan_wait = match env::var("TIMEOUT_CHANNEL_WAIT") {
             Ok(value) => value.parse::<u64>().unwrap(),
             Err(_) => 1,
         };
-
-        // Parse arguments
-        // TODO: HoangLe [May-02]: Enhance arg parsing
-        let args: Vec<String> = env::args().collect();
 
         // Set up logger
         if env::var("RUST_LOG").is_err() {
@@ -51,25 +81,33 @@ impl Configs {
         }
         env_logger::init();
 
-        // Override some config
-        if args.len() >= 3 {
-            match args[2].parse::<u16>() {
-                Ok(port) => {
-                    log::info!("'port' argument specified. Override the default value.");
-                    port_receiver = port;
+        // Parse arguments
+        let args = Args::parse();
+
+        if let Role::Client = args.role {
+            if args.action.is_none() {
+                log::error!("Role: Client - Missing argument: 'action'");
+                exit(1);
+            }
+            match args.name {
+                None => {
+                    log::error!("Role: Client - Missing argument: 'name'");
+                    exit(1);
                 }
-                Err(_) => {
-                    log::error!("2nd argument specified but not valid port value: {}", args[2]);
+                Some(_) => {
+                    if args.path.is_none() {
+                        log::error!("Role: Client - Missing argument: 'path'");
+                        exit(1);
+                    }
                 }
             }
         }
 
         Configs {
-            env_ip_dns: ip_dns,
-            env_port_receiver: port_receiver,
-            env_port_dns: port_dns,
+            ip_dns: ip_dns,
+            port_dns: port_dns,
             interval_heartbeat,
-            timeout_channel_wait,
+            timeout_chan_wait,
             args,
         }
     }
