@@ -1,7 +1,6 @@
 use components::{
     configs::Configs,
-    entity::{client::Client, node_roles::Role, nodes::Node},
-    packets::Action,
+    entity::{client::Client, data::Data, dns::DNS, master::Master, node_roles::Role, nodes::Node},
 };
 
 mod components;
@@ -17,20 +16,16 @@ fn main() {
     // ================================================
     match configs.args.role {
         Role::Master => {
-            let mut node = Node::new(configs, Role::Master);
-            node.start();
+            Master::new(&configs).start(configs.args.port);
         }
         Role::Data => {
-            let mut node = Node::new(configs, Role::Data);
-            node.start();
+            Data::new(&configs).start(configs.args.port);
         }
         Role::DNS => {
-            let mut node = Node::new(configs, Role::DNS);
-            node.start()
+            DNS::new(&configs).start(configs.port_dns);
         }
         Role::Client => {
-            let mut client = Client::new(&configs);
-            client.start(Action::Write);
+            Client::new(&configs).start(configs.args.port);
         }
         _ => panic!("Invalid role argument"),
     };

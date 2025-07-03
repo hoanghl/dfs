@@ -7,7 +7,6 @@
 - For `addr_current`, use machine IP
 - Remove all `panic`
 - Convert all clone used for `addr` to other more memory efficient form
-- Convert `Node` into trait to simulate it as class
 - In Flow Send file, if Master designates itself as a data storing node, no need to
 - Handle corner case in Replication:
   - No. current nodes less than `NUM_REPLICAS`: Re-run Replication when new node joins

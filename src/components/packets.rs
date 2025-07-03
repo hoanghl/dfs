@@ -62,6 +62,7 @@ pub enum PacketId {
     StateSync               = 13,
     StateSyncAck            = 14,
     Notify                  = 15,
+    ClientUploadAck         = 16,
 }
 
 pub struct Packet {
@@ -124,6 +125,7 @@ impl From<u8> for PacketId {
             13 => PacketId::StateSync,
             14 => PacketId::StateSyncAck,
             15 => PacketId::Notify,
+            16 => PacketId::ClientUploadAck,
             _ => panic!("Error as parsing to enum PacketId: value = {}", value),
         }
     }
@@ -148,6 +150,7 @@ impl From<PacketId> for u8 {
             PacketId::StateSync => 13,
             PacketId::StateSyncAck => 14,
             PacketId::Notify => 15,
+            PacketId::ClientUploadAck => 16,
         }
     }
 }
@@ -171,6 +174,7 @@ impl std::fmt::Display for PacketId {
             PacketId::StateSync => "StateSync",
             PacketId::StateSyncAck => "StateSyncAck",
             PacketId::Notify => "Notify",
+            PacketId::ClientUploadAck => "ClientUploadAck",
         };
         write!(f, "{}", s)
     }
@@ -195,6 +199,7 @@ impl std::fmt::Debug for PacketId {
             PacketId::StateSync => "StateSync",
             PacketId::StateSyncAck => "StateSyncAck",
             PacketId::Notify => "Notify",
+            PacketId::ClientUploadAck => "ClientUploadAck",
         };
         write!(f, "{}", s)
     }
@@ -433,6 +438,11 @@ impl Packet {
             },
 
             PacketId::ClientUpload => {
+                // Parse port info from payload
+                packet.addr_sender.as_mut().unwrap().set_port(u16::from_be_bytes(
+                    payload[0..2].try_into().expect("Cannot cast last 2 bytes to array"),
+                ));
+
                 // Loop over payload to find position of 2 consecutive character '|'
                 let mut last_idx_sep_tok: Option<usize> = None;
                 for (idx, byte) in payload.iter().enumerate() {
@@ -459,7 +469,7 @@ impl Packet {
                 }
 
                 // Parse field 'filename' and 'binary'
-                packet.filename = match String::from_utf8(payload[0..last_idx_sep_tok.unwrap()].to_vec()) {
+                packet.filename = match String::from_utf8(payload[2..last_idx_sep_tok.unwrap()].to_vec()) {
                     Ok(filename) => Some(filename),
                     Err(err) => {
                         log::error!("Reading ClientUpload: Got error as parsing filename: {}", err);
@@ -495,6 +505,7 @@ impl Packet {
                     return Err(ParseError::mismatched_packet_size(packet_id, bytes.len(), payload_size));
                 }
             },
+            PacketId::ClientUploadAck => {}
             _ => return Err(ParseError::incorrect_packet_id(packet_id as u8)),
         }
 
@@ -611,15 +622,19 @@ impl Packet {
         packet
     }
 
-    pub fn create_client_upload(addr_rcv: SocketAddr, filename: &String, binary: Vec<u8>) -> Packet {
+    pub fn create_client_upload(port: u16, addr_rcv: SocketAddr, filename: &String, binary: Vec<u8>) -> Packet {
         let mut packet = Packet {
             packet_id: PacketId::ClientUpload,
             addr_rcv: Some(addr_rcv),
             ..Default::default()
         };
 
-        // Craft payload: filename + '|' + '|' + binary
-        let mut payload = filename.as_bytes().to_vec();
+        // Craft payload: port + filename + '|' + '|' + binary
+        let mut payload = Vec::<u8>::new();
+
+        payload.extend_from_slice(&port.to_be_bytes());
+
+        payload.extend_from_slice(filename.as_bytes());
 
         payload.push(BYTE_SEP_CHARACTER);
         payload.push(BYTE_SEP_CHARACTER);
@@ -657,6 +672,34 @@ impl Packet {
             payload: Some(payload),
             ..Default::default()
         }
+    }
+
+    pub fn create_client_upload_ack(addr_rcv: SocketAddr) -> Packet {
+        Packet {
+            packet_id: PacketId::ClientUploadAck,
+            addr_rcv: Some(addr_rcv),
+            ..Default::default()
+        }
+    }
+}
+
+pub fn forward_packet(sndr_p2s: &Sender<Packet>, packet: Packet) {
+    log::debug!("packet size: {}", packet.to_bytes().len());
+
+    if let Err(err) = sndr_p2s.send(packet) {
+        log::error!("Err as sending from thread:Processor -> thread:Sender: {}", err);
+    };
+}
+
+pub fn wait_packet(rcvr_r2p: &Receiver<Packet>) -> Packet {
+    loop {
+        let received = rcvr_r2p.recv_timeout(Duration::from_secs(2));
+        if let Ok(packet) = received {
+            // log::info!("{}", err);
+            // continue;
+            return packet;
+        }
+        // let packet = received.unwrap();
     }
 }
 

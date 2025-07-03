@@ -351,7 +351,7 @@ pub fn get_nodes_replication(
     };
 
     let rows = stmt.query_map(params![n], |row| {
-        log::debug!("inside: {:?}", row.get::<usize, String>(0));
+        log::debug!("get_nodes_replication: inside: {:?}", row.get::<usize, String>(0));
         let node_id = row.get::<usize, String>(0)?;
         match conv_id2addr(node_id) {
             Ok(addr) => Ok(addr),
