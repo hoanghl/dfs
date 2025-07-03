@@ -1,6 +1,6 @@
 use components::{
     configs::Configs,
-    entity::{client::Client, node_roles::Role, nodes::Node},
+    entity::{client::Client, data::Data, dns::DNS, master::Master, node_roles::Role, nodes::Node},
 };
 
 mod components;
@@ -14,23 +14,19 @@ fn main() {
     // ================================================
     // Establish server
     // ================================================
-    match configs.args[1].as_str() {
-        "master" => {
-            let mut node = Node::new(configs, Role::Master);
-            node.start();
+    match configs.args.role {
+        Role::Master => {
+            Master::new(&configs).start(configs.args.port);
         }
-        "data" => {
-            let mut node = Node::new(configs, Role::Data);
-            node.start();
+        Role::Data => {
+            Data::new(&configs).start(configs.args.port);
         }
-        "dns" => {
-            let mut node = Node::new(configs, Role::DNS);
-            node.start()
+        Role::DNS => {
+            DNS::new(&configs).start(configs.port_dns);
         }
-        "client" => {
-            let client = Client::new(&configs);
-            client.ask_master_ip();
+        Role::Client => {
+            Client::new(&configs).start(configs.args.port);
         }
-        _ => panic!("First argument must be a valid mode"),
+        _ => panic!("Invalid role argument"),
     };
 }

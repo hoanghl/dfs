@@ -1,12 +1,15 @@
-use std::convert::From;
-use std::fmt::{self};
-use std::net::SocketAddrV4;
 use std::{
+    convert::From,
+    fmt::{self},
     io::Read,
+    net::SocketAddrV4,
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream},
+    str::FromStr,
+    sync::mpsc::{Receiver, Sender},
+    time::Duration,
 };
 
-use crate::components::{db::_get_node_id, entity::node_roles::Role, errors::ParseError};
+use crate::components::{db::conv_addr2id, entity::node_roles::Role, errors::ParseError};
 
 // ================================================
 // Definition for enum and constants
@@ -15,6 +18,29 @@ use crate::components::{db::_get_node_id, entity::node_roles::Role, errors::Pars
 const BYTE_SEP_CHARACTER: u8 = 124; // byte value of character '|'
 const SIZE_HEADER: usize = 5;
 const BUFF_LEN: usize = 1024;
+
+#[derive(Clone)]
+#[repr(u8)]
+pub enum Action {
+    Read = 0,
+    Write = 1,
+}
+
+impl FromStr for Action {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "read" => {
+                return Ok(Self::Read);
+            }
+            "write" => {
+                return Ok(Self::Write);
+            }
+            _ => Err(format!("Cannot parse given string to Action. Got: {}", s)),
+        }
+    }
+}
 
 #[rustfmt::skip]
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -36,26 +62,49 @@ pub enum PacketId {
     StateSync               = 13,
     StateSyncAck            = 14,
     Notify                  = 15,
+    ClientUploadAck         = 16,
 }
 
 pub struct Packet {
     // General attributes
     pub packet_id: PacketId,
     pub addr_sender: Option<SocketAddr>,
-    pub addr_receiver: Option<SocketAddr>,
+    pub addr_rcv: Option<SocketAddr>,
 
     // Attributes dedicated for sending
     pub payload: Option<Vec<u8>>,
 
     // Attributes parsed from payload
     pub addr_master: Option<SocketAddr>,
+    pub addr_data: Option<SocketAddr>,
     pub role: Option<Role>,
     pub node_id: Option<String>,
+    pub flag_read_write: Option<Action>,
+    pub filename: Option<String>,
+    pub binary: Option<Vec<u8>>,
 }
 
 // ================================================
 // Implementation
 // ================================================
+
+impl From<u8> for Action {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Action::Read,
+            1 => Action::Write,
+            _ => panic!("Error as parsing to enum Action: value = {}", value),
+        }
+    }
+}
+impl From<Action> for u8 {
+    fn from(value: Action) -> Self {
+        match value {
+            Action::Read => 0,
+            Action::Write => 1,
+        }
+    }
+}
 
 impl From<u8> for PacketId {
     fn from(value: u8) -> Self {
@@ -76,6 +125,7 @@ impl From<u8> for PacketId {
             13 => PacketId::StateSync,
             14 => PacketId::StateSyncAck,
             15 => PacketId::Notify,
+            16 => PacketId::ClientUploadAck,
             _ => panic!("Error as parsing to enum PacketId: value = {}", value),
         }
     }
@@ -100,6 +150,7 @@ impl From<PacketId> for u8 {
             PacketId::StateSync => 13,
             PacketId::StateSyncAck => 14,
             PacketId::Notify => 15,
+            PacketId::ClientUploadAck => 16,
         }
     }
 }
@@ -123,6 +174,7 @@ impl std::fmt::Display for PacketId {
             PacketId::StateSync => "StateSync",
             PacketId::StateSyncAck => "StateSyncAck",
             PacketId::Notify => "Notify",
+            PacketId::ClientUploadAck => "ClientUploadAck",
         };
         write!(f, "{}", s)
     }
@@ -147,6 +199,7 @@ impl std::fmt::Debug for PacketId {
             PacketId::StateSync => "StateSync",
             PacketId::StateSyncAck => "StateSyncAck",
             PacketId::Notify => "Notify",
+            PacketId::ClientUploadAck => "ClientUploadAck",
         };
         write!(f, "{}", s)
     }
@@ -158,10 +211,14 @@ impl Default for Packet {
             packet_id: PacketId::Default,
             payload: None,
             addr_sender: None,
-            addr_receiver: None,
+            addr_rcv: None,
             addr_master: None,
+            addr_data: None,
             role: None,
             node_id: None,
+            flag_read_write: None,
+            filename: None,
+            binary: None,
         }
     }
 }
@@ -320,14 +377,108 @@ impl Packet {
                 }
             },
             PacketId::RequestFromClient => {
-                // TODO: HoangLe [May-02]: Implement this
+                // Parse 'flag_read_write'
+                match payload[0] {
+                    0 | 1 => {
+                        packet.flag_read_write = Some(Action::from(payload[0]));
+                    }
+                    _ => {
+                        log::error!(
+                            "Receiving RequestFromClient from: {:?}: Invalid 'flag_read_write': {}",
+                            packet.addr_sender,
+                            payload[0]
+                        );
+                        return Err(ParseError::stream_reading_err());
+                    }
+                }
+
+                // Parse 'port'
+                packet.addr_sender.as_mut().unwrap().set_port(u16::from_be_bytes(
+                    payload[1..3]
+                        .try_into()
+                        .expect("Cannot parse 2 bytes in payload to port value"),
+                ));
+
+                // Parse 'filename'
+                match String::from_utf8(payload[3..payload_size - 1].to_vec()) {
+                    Ok(filename) => {
+                        packet.filename = Some(filename);
+                    }
+                    Err(err) => {
+                        log::error!(
+                            "Receiving RequestFromClient from: {:?}: Cannot parse filename: {}",
+                            packet.addr_sender,
+                            err
+                        );
+                        return Err(ParseError::stream_reading_err());
+                    }
+                };
             }
-            PacketId::ResponseNodeIp => {
-                // TODO: HoangLe [May-02]: Implement this
-            }
+
+            PacketId::ResponseNodeIp => match payload_size {
+                0 => {
+                    return Err(ParseError::unavailable_master_ip());
+                }
+                6 => {
+                    let mut buff = Vec::with_capacity(payload_size);
+                    if let Err(err) = stream.read_exact(&mut buff) {
+                        log::error!("Err as reading bytes for payload: {}", err);
+                        return Err(ParseError::stream_reading_err());
+                    }
+                    packet.payload = Some(buff);
+
+                    // Parse Data node's address from payload
+                    let ip = Ipv4Addr::new(payload[0], payload[1], payload[2], payload[3]);
+                    let port = u16::from_be_bytes(payload[4..6].try_into().expect("Cannot cast last 2 bytes to array"));
+                    packet.addr_data = Some(SocketAddr::V4(SocketAddrV4::new(ip, port)));
+                }
+                _ => {
+                    return Err(ParseError::incorrect_payload_size_ask_ip_ack(payload.len()));
+                }
+            },
+
             PacketId::ClientUpload => {
-                // TODO: HoangLe [May-02]: Implement this
+                // Parse port info from payload
+                packet.addr_sender.as_mut().unwrap().set_port(u16::from_be_bytes(
+                    payload[0..2].try_into().expect("Cannot cast last 2 bytes to array"),
+                ));
+
+                // Loop over payload to find position of 2 consecutive character '|'
+                let mut last_idx_sep_tok: Option<usize> = None;
+                for (idx, byte) in payload.iter().enumerate() {
+                    last_idx_sep_tok = match byte {
+                        &BYTE_SEP_CHARACTER => match last_idx_sep_tok {
+                            None => Some(idx),
+                            Some(_) => {
+                                // Found 2 consecutive separating characters '||'
+                                break;
+                            }
+                        },
+                        _ => None,
+                    };
+                }
+
+                // Handle some corner cases
+                if last_idx_sep_tok.is_none() {
+                    log::error!("Reading ClientUpload: Not found 2 consecutive separating characters '||'");
+                    return Err(ParseError::stream_reading_err());
+                }
+                if last_idx_sep_tok.unwrap() + 2 == payload_size {
+                    log::error!("Reading ClientUpload: Found 2 consecutive separating characters '||' at the end of payload => No binary found");
+                    return Err(ParseError::stream_reading_err());
+                }
+
+                // Parse field 'filename' and 'binary'
+                packet.filename = match String::from_utf8(payload[2..last_idx_sep_tok.unwrap()].to_vec()) {
+                    Ok(filename) => Some(filename),
+                    Err(err) => {
+                        log::error!("Reading ClientUpload: Got error as parsing filename: {}", err);
+                        None
+                    }
+                };
+                packet.binary = Some(payload[last_idx_sep_tok.unwrap() + 2..payload_size].to_vec());
             }
+
             PacketId::DataNodeSendData => {
                 // TODO: HoangLe [May-02]: Implement this
             }
@@ -354,6 +505,7 @@ impl Packet {
                     return Err(ParseError::mismatched_packet_size(packet_id, bytes.len(), payload_size));
                 }
             },
+            PacketId::ClientUploadAck => {}
             _ => return Err(ParseError::incorrect_packet_id(packet_id as u8)),
         }
 
@@ -362,19 +514,19 @@ impl Packet {
         return Ok(packet);
     }
 
-    pub fn create_heartbeat(addr_receiver: SocketAddr) -> Packet {
+    pub fn create_heartbeat(addr_rcv: SocketAddr) -> Packet {
         Packet {
             packet_id: PacketId::Heartbeat,
-            addr_receiver: Some(addr_receiver),
+            addr_rcv: Some(addr_rcv),
             ..Default::default()
         }
     }
 
-    pub fn create_heartbeat_ack(addr_receiver: SocketAddr, addr_current: SocketAddr) -> Packet {
+    pub fn create_heartbeat_ack(addr_rcv: SocketAddr, addr_current: SocketAddr) -> Packet {
         let mut payload = Vec::<u8>::new();
         match addr_current {
             SocketAddr::V4(addr) => {
-                payload.extend_from_slice(_get_node_id(addr.ip(), addr.port()).as_bytes());
+                payload.extend_from_slice(conv_addr2id(addr.ip(), addr.port()).as_bytes());
             }
             _ => {
                 log::error!("Creating HEARTBEAT_ACK, but IP of current node isn't IPv4 format.");
@@ -383,7 +535,7 @@ impl Packet {
 
         Packet {
             packet_id: PacketId::HeartbeatAck,
-            addr_receiver: Some(addr_receiver),
+            addr_rcv: Some(addr_rcv),
             payload: Some(payload),
             ..Default::default()
         }
@@ -399,25 +551,23 @@ impl Packet {
     //     // TODO: HoangLe [Apr-28]: Implement this
     // }
 
-    pub fn create_ask_ip(addr_receiver: SocketAddr, port: Option<u16>) -> Packet {
+    pub fn create_ask_ip(addr_rcv: SocketAddr, port: u16) -> Packet {
         // Craft payload
         let mut payload = Vec::<u8>::new();
-        if let Some(port) = port {
-            payload.extend_from_slice(&port.to_be_bytes())
-        };
+        payload.extend_from_slice(&port.to_be_bytes());
 
         Packet {
             packet_id: PacketId::AskIp,
-            addr_receiver: Some(addr_receiver),
+            addr_rcv: Some(addr_rcv),
             payload: Some(payload),
             ..Default::default()
         }
     }
 
-    pub fn create_ask_ip_ack(addr_receiver: SocketAddr, addr_master: Option<&SocketAddr>) -> Packet {
+    pub fn create_ask_ip_ack(addr_rcv: SocketAddr, addr_master: Option<&SocketAddr>) -> Packet {
         let mut packet = Packet {
             packet_id: PacketId::AskIpAck,
-            addr_receiver: Some(addr_receiver),
+            addr_rcv: Some(addr_rcv),
             ..Default::default()
         };
         match addr_master {
@@ -434,15 +584,67 @@ impl Packet {
         packet
     }
 
-    // pub fn create_RequestFromClient() -> Packet {
-    //     // TODO: HoangLe [Apr-28]: Implement this
-    // }
-    // pub fn create_ResponseNodeIp() -> Packet {
-    //     // TODO: HoangLe [Apr-28]: Implement this
-    // }
-    // pub fn create_ClientUpload() -> Packet {
-    //     // TODO: HoangLe [Apr-28]: Implement this
-    // }
+    pub fn create_request_from_client(action: Action, port: u16, filename: &String, addr_rcv: SocketAddr) -> Packet {
+        let mut packet = Packet {
+            packet_id: PacketId::RequestFromClient,
+            addr_rcv: Some(addr_rcv),
+            ..Default::default()
+        };
+
+        // Craft payload
+        let mut payload = Vec::<u8>::new();
+        payload.push(action as u8);
+
+        payload.extend_from_slice(&port.to_be_bytes());
+
+        payload.extend_from_slice(filename.as_bytes());
+
+        packet.payload = Some(payload);
+
+        packet
+    }
+
+    pub fn create_response_node_ip(addr_rcv: SocketAddr, addr_node: SocketAddr) -> Packet {
+        let mut packet = Packet {
+            packet_id: PacketId::ResponseNodeIp,
+            addr_rcv: Some(addr_rcv),
+            ..Default::default()
+        };
+
+        // Craft payload: Contain IP and port of node holding data file
+        if let IpAddr::V4(ip) = addr_node.ip() {
+            let mut payload = ip.octets().to_vec();
+            payload.extend_from_slice(&addr_node.port().to_be_bytes());
+
+            packet.payload = Some(payload);
+        }
+
+        packet
+    }
+
+    pub fn create_client_upload(port: u16, addr_rcv: SocketAddr, filename: &String, binary: Vec<u8>) -> Packet {
+        let mut packet = Packet {
+            packet_id: PacketId::ClientUpload,
+            addr_rcv: Some(addr_rcv),
+            ..Default::default()
+        };
+
+        // Craft payload: port + filename + '|' + '|' + binary
+        let mut payload = Vec::<u8>::new();
+
+        payload.extend_from_slice(&port.to_be_bytes());
+
+        payload.extend_from_slice(filename.as_bytes());
+
+        payload.push(BYTE_SEP_CHARACTER);
+        payload.push(BYTE_SEP_CHARACTER);
+
+        payload.extend(binary.iter());
+
+        packet.payload = Some(payload);
+
+        packet
+    }
     // pub fn create_DataNodeSendData() -> Packet {
     //     // TODO: HoangLe [Apr-28]: Implement this
     // }
@@ -456,7 +658,7 @@ impl Packet {
     //     // TODO: HoangLe [Apr-28]: Implement this
     // }
 
-    pub fn create_notify(addr_receiver: SocketAddr, role: &Role, addr_current: SocketAddr) -> Packet {
+    pub fn create_notify(addr_rcv: SocketAddr, role: &Role, addr_current: SocketAddr) -> Packet {
         // Craft payload
         let mut payload = Vec::<u8>::new();
         payload.push(u8::try_from(role).expect("Cannot parse 'role' to u8 value."));
@@ -466,9 +668,37 @@ impl Packet {
 
         Packet {
             packet_id: PacketId::Notify,
-            addr_receiver: Some(addr_receiver),
+            addr_rcv: Some(addr_rcv),
             payload: Some(payload),
             ..Default::default()
         }
+    }
+
+    pub fn create_client_upload_ack(addr_rcv: SocketAddr) -> Packet {
+        Packet {
+            packet_id: PacketId::ClientUploadAck,
+            addr_rcv: Some(addr_rcv),
+            ..Default::default()
+        }
+    }
+}
+
+pub fn forward_packet(sndr_p2s: &Sender<Packet>, packet: Packet) {
+    log::debug!("packet size: {}", packet.to_bytes().len());
+
+    if let Err(err) = sndr_p2s.send(packet) {
+        log::error!("Err as sending from thread:Processor -> thread:Sender: {}", err);
+    };
+}
+
+pub fn wait_packet(rcvr_r2p: &Receiver<Packet>) -> Packet {
+    loop {
+        let received = rcvr_r2p.recv_timeout(Duration::from_secs(2));
+        if let Ok(packet) = received {
+            // log::info!("{}", err);
+            // continue;
+            return packet;
+        }
+        // let packet = received.unwrap();
     }
 }

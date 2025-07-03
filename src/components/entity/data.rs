@@ -1,0 +1,150 @@
+use log;
+use rusqlite::Connection;
+
+use std::{
+    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
+    process::exit,
+    sync::mpsc::{Receiver, Sender},
+    time::Duration,
+};
+
+use crate::components::{
+    configs::Configs,
+    db::{conv_addr2id, FileInfoDB, FileInfoEntry},
+    entity::{node_roles::Role, nodes::Node},
+    errors::{NodeCreationError, NodeCreationErrorCode},
+    file_utils::FileUtils,
+    packets::{forward_packet, Packet, PacketId},
+};
+
+pub struct Data<'a> {
+    configs: &'a Configs,
+}
+
+impl<'a> Node for Data<'a> {
+    fn trigger_processor(
+        &mut self,
+        rcvr_r2p: &Receiver<Packet>,
+        sndr_p2s: &Sender<Packet>,
+    ) -> Result<(), NodeCreationError> {
+        let addr_dns: SocketAddr = SocketAddr::new(IpAddr::V4(self.configs.ip_dns), self.configs.port_dns);
+        let mut addr_master: Option<SocketAddr> = None;
+        let addr_current = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), self.configs.args.port));
+
+        // For data management
+        let file_utils = match FileUtils::new(&self.configs) {
+            Ok(file_utils) => file_utils,
+            Err(err) => {
+                log::error!("Err as creating file_utils: {}", err);
+                return Err(NodeCreationError {
+                    error_code: NodeCreationErrorCode::ProcessorThreadErr,
+                });
+            }
+        };
+
+        let name_db_file = "file_info";
+        let conn = match Connection::open_in_memory() {
+            Ok(conn) => conn,
+            Err(err) => {
+                log::error!("Error as initializing in-memory DB: {}", err);
+                return Err(NodeCreationError {
+                    error_code: NodeCreationErrorCode::ProcessorThreadErr,
+                });
+            }
+        };
+        let data_info = match FileInfoDB::intialize(name_db_file, &conn) {
+            Ok(db) => db,
+            Err(err) => {
+                log::error!("Error as initializing in-memory DB: {}", err);
+                return Err(NodeCreationError {
+                    error_code: NodeCreationErrorCode::ProcessorThreadErr,
+                });
+            }
+        };
+
+        // ================================================
+        // Execute 1st step of Initial procedure based on node's role
+        // ================================================
+
+        // Ask Master IP from DNS and notify to current master
+        if let Err(err) = sndr_p2s.send(Packet::create_ask_ip(addr_dns, self.configs.args.port)) {
+            log::error!("Error as sending AskIP: {}", err);
+            return Err(NodeCreationError {
+                error_code: NodeCreationErrorCode::ProcessorThreadErr,
+            });
+        }
+
+        // ================================================
+        // Start processing loop
+        // ================================================
+        loop {
+            let packet = match rcvr_r2p.recv_timeout(Duration::from_secs(self.configs.timeout_chan_wait)) {
+                Ok(packet) => packet,
+                Err(_) => continue,
+            };
+
+            match packet.packet_id {
+                PacketId::Heartbeat => {
+                    forward_packet(
+                        sndr_p2s,
+                        Packet::create_heartbeat_ack(addr_master.clone().unwrap(), addr_current.clone()),
+                    );
+                }
+                PacketId::AskIpAck => match packet.addr_master {
+                    None => {
+                        log::error!("Received packet not contain address of Master");
+                        continue;
+                    }
+                    Some(addr) => {
+                        addr_master = Some(addr.clone());
+
+                        forward_packet(sndr_p2s, Packet::create_notify(addr, &Role::Data, addr_current.clone()));
+                    }
+                },
+                PacketId::ClientUpload => {
+                    let filename = packet.filename.unwrap();
+
+                    // Store data
+                    if let Err(err) = file_utils.save_file(&filename, packet.binary.as_ref().unwrap()) {
+                        log::error!("Cannot create new file: {}: Err: {}", filename, err);
+                        continue;
+                    };
+
+                    // Insert data
+                    let ip = match addr_current.ip() {
+                        IpAddr::V4(ip) => ip,
+                        _ => {
+                            log::error!("Cannot parse addr_current to IpV4 format: {}", { addr_current });
+                            continue;
+                        }
+                    };
+
+                    let file_info =
+                        FileInfoEntry::initialize(filename, true, String::from(conv_addr2id(&ip, addr_current.port())));
+                    if let Err(err) = data_info.upsert(&file_info) {
+                        log::error!("Error as upsert: {}", err);
+                        exit(1);
+                    }
+
+                    // Response to client
+                    forward_packet(
+                        sndr_p2s,
+                        Packet::create_client_upload_ack(packet.addr_sender.clone().unwrap()),
+                    );
+                }
+
+                _ => {
+                    log::error!("Unsupported packet type: {}", packet);
+                    continue;
+                }
+            };
+        }
+    }
+}
+
+impl<'a> Data<'a> {
+    /// Create new node
+    pub fn new(configs: &Configs) -> Data {
+        Data { configs }
+    }
+}
