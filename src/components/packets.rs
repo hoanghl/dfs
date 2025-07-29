@@ -701,21 +701,3 @@ pub fn wait_packet(rcvr_r2p: &Receiver<Packet>) -> Packet {
         // let packet = received.unwrap();
     }
 }
-
-pub fn forward_packet(sender_processor2sender: &Sender<Packet>, packet: Packet) {
-    if let Err(err) = sender_processor2sender.send(packet) {
-        log::error!("Err as sending from thread:Processor -> thread:Sender: {}", err);
-    };
-}
-
-pub fn wait_packet(receiver_receiver2processor: &Receiver<Packet>) -> Packet {
-    loop {
-        let received = receiver_receiver2processor.recv_timeout(Duration::from_secs(2));
-        if let Ok(packet) = received {
-            // log::info!("{}", err);
-            // continue;
-            return packet;
-        }
-        // let packet = received.unwrap();
-    }
-}

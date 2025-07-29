@@ -1,7 +1,7 @@
 use crate::components::{
     configs::Configs,
     entity::nodes::Node,
-    errors::NodeCreationError,
+    errors::{NodeCreationError, NodeCreationErrorCode},
     packets::{forward_packet, wait_packet, Action, Packet, PacketId},
 };
 use log;
@@ -110,60 +110,31 @@ impl<'conf> Client<'conf> {
         if PacketId::ClientUploadAck != packet.packet_id {
             log::error!("Supposed to received ClientRequestAck. Got: {}", packet.packet_id);
         }
+    }
+}
 
-        // 2. Ask DNS for Master's address
-        log::debug!("Ask Master address from DNS: {}", addr_dns);
+impl<'conf> Node for Client<'conf> {
+    fn trigger_processor(
+        &mut self,
+        rcvr_r2p: &Receiver<Packet>,
+        sndr_p2s: &Sender<Packet>,
+    ) -> Result<(), NodeCreationError> {
+        if let None = self.configs.args.action {
+            log::error!("args.action must not be None");
 
-        forward_packet(
-            sender_processor2sender,
-            Packet::create_ask_ip(addr_dns, addr_current.port()),
-        );
-        packet = wait_packet(receiver_receiver2processor);
-        if PacketId::AskIpAck != packet.packet_id {
-            log::error!("Must received AskIpAck from DNS. Got: {}", packet.packet_id);
-            exit(1);
+            return Err(NodeCreationError {
+                error_code: NodeCreationErrorCode::ProcessorThreadErr,
+            });
         }
-        let addr_master = match packet.addr_master {
-            Some(addr) => addr,
-            None => {
-                log::error!("Received packet not contain addr_master");
-                exit(1);
+        match self.configs.args.action.as_ref().unwrap() {
+            Action::Read => {
+                // TODO: HoangLe [Jul-29]: Implement this
             }
-        };
-
-        // 3. Connect to Master to get addr of node to send data
-        log::debug!("Connect to Master: {}", addr_master);
-
-        forward_packet(
-            sender_processor2sender,
-            Packet::create_request_from_client(
-                Action::Write,
-                self.configs.args.port,
-                self.configs.args.name.as_ref().unwrap(),
-                addr_master,
-            ),
-        );
-        packet = wait_packet(receiver_receiver2processor);
-        if PacketId::ResponseNodeIp != packet.packet_id {
-            log::error!("Must received ResponseNodeIp from DNS. Got: {}", packet.packet_id);
-            exit(1);
+            Action::Write => {
+                self.send_file(rcvr_r2p, sndr_p2s);
+            }
         }
-        if packet.addr_data.is_none() {
-            log::error!("Received packet not contained 'addr_data'");
-            exit(1);
-        };
-        let addr_data = packet.addr_data.unwrap();
 
-        // 4. Connect to Data node to send file
-        log::debug!(
-            "Connect to Data node to send file: {} - {:?}",
-            addr_data,
-            self.configs.args.path
-        );
-
-        forward_packet(
-            sender_processor2sender,
-            Packet::create_client_upload(addr_data, self.configs.args.name.as_ref().unwrap(), binary),
-        );
+        Ok(())
     }
 }
