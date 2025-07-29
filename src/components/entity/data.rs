@@ -4,7 +4,7 @@ use crate::components::{
     errors::{NodeCreationError, NodeCreationErrorCode},
     file_utils::FileUtils,
     inmem_db::{entries::FileInfoEntry, manager::DBManager, utils::*},
-    packets::{forward_packet, Packet, PacketId},
+    packets::{forward_packet, Action, Packet, PacketId},
 };
 use log;
 use std::{
@@ -112,7 +112,7 @@ impl<'a> Node for Data<'a> {
                     };
 
                     if let Err(err) = db_manager.upsert_file(FileInfoEntry::initialize(
-                        filename,
+                        &filename,
                         true,
                         String::from(conv_addr2id(&ip, addr_current.port())),
                     )) {
@@ -120,10 +120,16 @@ impl<'a> Node for Data<'a> {
                         exit(1);
                     }
 
-                    // Response to client
+                    // Send ACK to client
                     forward_packet(
                         sndr_p2s,
                         Packet::create_client_upload_ack(packet.addr_sender.clone().unwrap()),
+                    );
+
+                    // Notify Master (aka itself) node the writing process is completed
+                    forward_packet(
+                        sndr_p2s,
+                        Packet::create_client_request_ack(Action::Write, &filename, addr_master.unwrap()),
                     );
                 }
 

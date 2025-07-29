@@ -647,9 +647,21 @@ impl Packet {
     // pub fn create_DataNodeSendData() -> Packet {
     //     // TODO: HoangLe [Apr-28]: Implement this
     // }
-    // pub fn create_ClientRequestAck() -> Packet {
-    //     // TODO: HoangLe [Apr-28]: Implement this
-    // }
+    pub fn create_client_request_ack(action: Action, filename: &String, addr_master: SocketAddr) -> Packet {
+        let mut packet = Packet {
+            packet_id: PacketId::ClientRequestAck,
+            addr_rcv: Some(addr_master),
+            ..Default::default()
+        };
+
+        let mut payload = Vec::<u8>::new();
+        payload.push(action as u8);
+        payload.extend_from_slice(filename.as_bytes());
+
+        packet.payload = Some(payload);
+
+        packet
+    }
     // pub fn create_StateSync() -> Packet {
     //     // TODO: HoangLe [Apr-28]: Implement this
     // }
@@ -683,7 +695,7 @@ impl Packet {
 }
 
 pub fn forward_packet(sndr_p2s: &Sender<Packet>, packet: Packet) {
-    log::debug!("packet size: {}", packet.to_bytes().len());
+    // log::debug!("packet size: {}", packet.to_bytes().len());
 
     if let Err(err) = sndr_p2s.send(packet) {
         log::error!("Err as sending from thread:Processor -> thread:Sender: {}", err);

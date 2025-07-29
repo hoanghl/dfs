@@ -136,7 +136,7 @@ impl<'a> Node for Master<'a> {
                                     // TODO: HoangLe [Jun-14]: Implement this
                                 }
                                 Action::Write => {
-                                    let node_ids = match db_manager.get_nodes_replication(2) {
+                                    let node_ids = match db_manager.get_nodes_replication(1) {
                                         Ok(node_ids) => node_ids,
                                         Err(err) => {
                                             log::error!("{}", err);
@@ -149,8 +149,6 @@ impl<'a> Node for Master<'a> {
                                         sndr_p2s,
                                         Packet::create_response_node_ip(packet.addr_sender.unwrap(), node_rcv_data),
                                     );
-
-                                    // TODO: HoangLe [Jun-22]: Continue with Replication flow
                                 }
                             }
                         }
@@ -173,7 +171,7 @@ impl<'a> Node for Master<'a> {
                             };
 
                             if let Err(err) = db_manager.upsert_file(FileInfoEntry::initialize(
-                                filename,
+                                &filename,
                                 true,
                                 String::from(conv_addr2id(&ip, addr_current.port())),
                             )) {
@@ -181,11 +179,31 @@ impl<'a> Node for Master<'a> {
                                 exit(1);
                             }
 
-                            // Response to client
+                            // Send ACK to client
                             forward_packet(
                                 sndr_p2s,
                                 Packet::create_client_upload_ack(packet.addr_sender.clone().unwrap()),
                             );
+
+                            // Notify Master (aka itself) node the writing process is completed
+                            forward_packet(
+                                sndr_p2s,
+                                Packet::create_client_request_ack(Action::Write, &filename, addr_current),
+                            );
+                        }
+
+                        PacketId::ClientRequestAck => {
+                            // TODO: HoangLe [Jul-29]: Implement Replication
+                            
+
+                            // 1. Select suitable node to store the file
+                            let node_id = match db_manager.get_nodes_replication(1) {
+                                Ok(node_ids) => node_ids[0],
+                                Err(err) => {
+                                    log::error!("{}", err);
+                                    continue;
+                                }
+                            };
                         }
                         _ => {
                             log::error!("Unsupported packet type: {}", packet);
@@ -195,41 +213,42 @@ impl<'a> Node for Master<'a> {
                 }
                 Err(_) => {
                     // Check timer and send Heartbeat
-                    if last_ts.is_none() {
-                        last_ts = Some(SystemTime::now());
-                        continue;
-                    }
-                    match SystemTime::now().duration_since(last_ts.unwrap()) {
-                        Ok(n) => {
-                            if n.as_secs() >= self.configs.interval_heartbeat {
-                                last_ts = Some(SystemTime::now());
+                    // FIXME: HoangLe [Jul-29]: Enable this after testing
+                    // if last_ts.is_none() {
+                    //     last_ts = Some(SystemTime::now());
+                    //     continue;
+                    // }
+                    // match SystemTime::now().duration_since(last_ts.unwrap()) {
+                    //     Ok(n) => {
+                    //         if n.as_secs() >= self.configs.interval_heartbeat {
+                    //             last_ts = Some(SystemTime::now());
 
-                                // Send heartbeat
-                                if let Ok(data_nodes) = db_manager.get_data_nodes() {
-                                    for node in &data_nodes {
-                                        match node.ip {
-                                            None => {
-                                                log::error!(
-                                                    "Cannot retrieve ip from node with node_id = {}",
-                                                    node.node_id
-                                                );
-                                                continue;
-                                            }
-                                            Some(ip) => {
-                                                let addr = SocketAddr::V4(SocketAddrV4::new(ip, node.port));
+                    //             // Send heartbeat
+                    //             if let Ok(data_nodes) = db_manager.get_data_nodes() {
+                    //                 for node in &data_nodes {
+                    //                     match node.ip {
+                    //                         None => {
+                    //                             log::error!(
+                    //                                 "Cannot retrieve ip from node with node_id = {}",
+                    //                                 node.node_id
+                    //                             );
+                    //                             continue;
+                    //                         }
+                    //                         Some(ip) => {
+                    //                             let addr = SocketAddr::V4(SocketAddrV4::new(ip, node.port));
 
-                                                log::info!("Send HEARTBEAT to {}", addr);
-                                                forward_packet(sndr_p2s, Packet::create_heartbeat(addr));
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Err(err) => {
-                            log::error!("{}", err);
-                        }
-                    }
+                    //                             log::info!("Send HEARTBEAT to {}", addr);
+                    //                             forward_packet(sndr_p2s, Packet::create_heartbeat(addr));
+                    //                         }
+                    //                     }
+                    //                 }
+                    //             }
+                    //         }
+                    //     }
+                    //     Err(err) => {
+                    //         log::error!("{}", err);
+                    //     }
+                    // }
                 }
             };
         }
