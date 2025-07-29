@@ -1,6 +1,5 @@
-use std::fmt::{Debug, Display};
-
 use super::packets::PacketId;
+use std::fmt::{Debug, Display};
 
 // ================================================
 // ParseError

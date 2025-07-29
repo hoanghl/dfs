@@ -1,18 +1,16 @@
-use std::{
-    fs::File,
-    io::{Read, Write},
-    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
-    process::exit,
-    sync::mpsc::{Receiver, Sender},
-};
-
-use log;
-
 use crate::components::{
     configs::Configs,
     entity::nodes::Node,
     errors::NodeCreationError,
     packets::{forward_packet, wait_packet, Action, Packet, PacketId},
+};
+use log;
+use std::{
+    fs::File,
+    io::Read,
+    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
+    process::exit,
+    sync::mpsc::{Receiver, Sender},
 };
 
 // ================================================
