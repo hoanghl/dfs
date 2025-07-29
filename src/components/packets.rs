@@ -1,3 +1,4 @@
+use crate::components::{entity::node_roles::Role, errors::ParseError, inmem_db::utils::*};
 use std::{
     convert::From,
     fmt::{self},
@@ -8,8 +9,6 @@ use std::{
     sync::mpsc::{Receiver, Sender},
     time::Duration,
 };
-
-use crate::components::{db::conv_addr2id, entity::node_roles::Role, errors::ParseError};
 
 // ================================================
 // Definition for enum and constants

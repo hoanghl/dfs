@@ -1,20 +1,17 @@
+use crate::components::{
+    configs::Configs,
+    entity::{node_roles::Role, nodes::Node},
+    errors::{NodeCreationError, NodeCreationErrorCode},
+    file_utils::FileUtils,
+    inmem_db::{entries::FileInfoEntry, manager::DBManager, utils::*},
+    packets::{forward_packet, Packet, PacketId},
+};
 use log;
-use rusqlite::Connection;
-
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
     process::exit,
     sync::mpsc::{Receiver, Sender},
     time::Duration,
-};
-
-use crate::components::{
-    configs::Configs,
-    db::{conv_addr2id, FileInfoDB, FileInfoEntry},
-    entity::{node_roles::Role, nodes::Node},
-    errors::{NodeCreationError, NodeCreationErrorCode},
-    file_utils::FileUtils,
-    packets::{forward_packet, Packet, PacketId},
 };
 
 pub struct Data<'a> {
@@ -42,25 +39,20 @@ impl<'a> Node for Data<'a> {
             }
         };
 
-        let name_db_file = "file_info";
-        let conn = match Connection::open_in_memory() {
-            Ok(conn) => conn,
-            Err(err) => {
-                log::error!("Error as initializing in-memory DB: {}", err);
+        // For in-mem db manager
+        let mut db_manager = match DBManager::new(self.configs) {
+            Ok(manager) => manager,
+            Err(_) => {
                 return Err(NodeCreationError {
                     error_code: NodeCreationErrorCode::ProcessorThreadErr,
                 });
             }
         };
-        let data_info = match FileInfoDB::intialize(name_db_file, &conn) {
-            Ok(db) => db,
-            Err(err) => {
-                log::error!("Error as initializing in-memory DB: {}", err);
-                return Err(NodeCreationError {
-                    error_code: NodeCreationErrorCode::ProcessorThreadErr,
-                });
-            }
-        };
+        if let Err(_) = db_manager.initialize_db(Role::Data) {
+            return Err(NodeCreationError {
+                error_code: NodeCreationErrorCode::ProcessorThreadErr,
+            });
+        }
 
         // ================================================
         // Execute 1st step of Initial procedure based on node's role
@@ -119,9 +111,11 @@ impl<'a> Node for Data<'a> {
                         }
                     };
 
-                    let file_info =
-                        FileInfoEntry::initialize(filename, true, String::from(conv_addr2id(&ip, addr_current.port())));
-                    if let Err(err) = data_info.upsert(&file_info) {
+                    if let Err(err) = db_manager.upsert_file(FileInfoEntry::initialize(
+                        filename,
+                        true,
+                        String::from(conv_addr2id(&ip, addr_current.port())),
+                    )) {
                         log::error!("Error as upsert: {}", err);
                         exit(1);
                     }

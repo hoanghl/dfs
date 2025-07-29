@@ -1,94 +1,48 @@
+use super::{
+    entries::{FileInfoEntry, NodeInfoEntry},
+    utils,
+};
+use crate::components::entity::node_roles::Role;
+use chrono::Local;
+use rusqlite::{params, Connection, Result};
 use std::{
     convert::From,
-    net::{IpAddr, SocketAddr, SocketAddrV4},
+    net::{Ipv4Addr, SocketAddrV4},
+    str::FromStr,
 };
-
-use crate::components::entity::node_roles::Role;
-use chrono::{DateTime, Local};
-use rusqlite::{params, Connection, Result};
-use std::{net::Ipv4Addr, str::FromStr};
-
-// ================================================
-// Definitions for DB entry
-// ================================================
-
-pub struct FileInfoEntry {
-    pub filename: String,
-    pub is_local: bool,
-    pub node_id: String,
-    pub last_updated: Option<DateTime<Local>>,
-}
-
-pub struct NodeInfoEntry {
-    pub node_id: String,
-    pub ip: Option<Ipv4Addr>,
-    pub port: u16,
-    pub role: Role,
-    pub last_updated: Option<DateTime<Local>>,
-}
-
-// ================================================
-// Implementations
-// ================================================
-
-impl FileInfoEntry {
-    pub fn initialize(filename: String, is_local: bool, node_id: String) -> FileInfoEntry {
-        FileInfoEntry {
-            filename,
-            is_local,
-
-            node_id,
-            last_updated: None,
-        }
-    }
-}
-
-impl NodeInfoEntry {
-    pub fn initialize(ip: Ipv4Addr, port: u16, role: Role) -> NodeInfoEntry {
-        NodeInfoEntry {
-            node_id: conv_addr2id(&ip, port),
-            ip: Some(ip),
-            role,
-            port,
-            last_updated: None,
-        }
-    }
-}
 
 // ================================================
 // Definitions for DB instance
 // ================================================
 
-pub trait InMemDB<'a, T> {
-    fn create_db(&mut self, conn: &'a Connection) -> Result<()>;
+pub trait InMemDB<T> {
+    fn create_db(&mut self, conn: &Connection) -> Result<()>;
 }
 
-pub struct FileInfoDB<'a> {
+pub struct FileInfoDB {
     db_name: &'static str,
-    conn: &'a Connection,
 }
 
-pub struct NodeInfoDB<'a> {
+pub struct NodeInfoDB {
     db_name: &'static str,
-    conn: &'a Connection,
 }
 
 // ================================================
 // Implementations
 // ================================================
 
-impl<'a> InMemDB<'a, FileInfoEntry> for FileInfoDB<'a> {
-    fn create_db(&mut self, conn: &'a Connection) -> Result<(), rusqlite::Error> {
+impl InMemDB<FileInfoEntry> for FileInfoDB {
+    fn create_db(&mut self, conn: &Connection) -> Result<(), rusqlite::Error> {
         log::info!("Creating db {}", self.db_name);
 
         match conn.execute(
             format!(
                 "CREATE TABLE IF NOT EXISTS {} (
-                filename        TEXT    PRIMARY KEY
-                ,is_local       BOOLEAN NOT NULL
-                ,node           TEXT    NOT NULL
-                ,last_updated   TEXT    NOT NULL
-            );",
+                    filename        TEXT    PRIMARY KEY
+                    ,is_local       BOOLEAN NOT NULL
+                    ,node           TEXT    NOT NULL
+                    ,last_updated   TEXT    NOT NULL
+                );",
                 &self.db_name
             )
             .as_str(),
@@ -100,9 +54,9 @@ impl<'a> InMemDB<'a, FileInfoEntry> for FileInfoDB<'a> {
     }
 }
 
-impl<'a> FileInfoDB<'a> {
-    pub fn intialize(db_name: &'static str, conn: &'a Connection) -> Result<FileInfoDB<'a>, rusqlite::Error> {
-        let mut db = FileInfoDB { db_name, conn };
+impl FileInfoDB {
+    pub fn intialize(db_name: &'static str, conn: &Connection) -> Result<FileInfoDB, rusqlite::Error> {
+        let mut db = FileInfoDB { db_name };
 
         match db.create_db(conn) {
             Ok(_) => Ok(db),
@@ -110,12 +64,12 @@ impl<'a> FileInfoDB<'a> {
         }
     }
 
-    pub fn upsert(&self, info: &FileInfoEntry) -> Result<()> {
+    pub fn upsert(&self, conn: &Connection, info: FileInfoEntry) -> Result<()> {
         log::debug!("Upsert..");
 
         let current = Local::now();
 
-        match self.conn.execute(
+        match conn.execute(
             format!(
                 "INSERT INTO {}
                 (filename, is_local, node, last_updated)
@@ -137,10 +91,8 @@ impl<'a> FileInfoDB<'a> {
         Ok(())
     }
 
-    pub fn get_file_info(&self, filename: &String) -> Result<Vec<FileInfoEntry>> {
-        let mut stmt = self
-            .conn
-            .prepare(format!("SELECT * FROM {} WHERE filename = ?1;", self.db_name).as_str())?;
+    pub fn get_file_info(&self, conn: &Connection, filename: &String) -> Result<Vec<FileInfoEntry>> {
+        let mut stmt = conn.prepare(format!("SELECT * FROM {} WHERE filename = ?1;", self.db_name).as_str())?;
         let rows = stmt.query_map([&filename], |row| {
             log::debug!("inside: {:?}", row.get::<usize, String>(3));
 
@@ -156,8 +108,8 @@ impl<'a> FileInfoDB<'a> {
     }
 }
 
-impl<'a> InMemDB<'a, NodeInfoEntry> for NodeInfoDB<'a> {
-    fn create_db(&mut self, conn: &'a Connection) -> Result<(), rusqlite::Error> {
+impl InMemDB<NodeInfoEntry> for NodeInfoDB {
+    fn create_db(&mut self, conn: &Connection) -> Result<(), rusqlite::Error> {
         log::info!("Creating db {}", self.db_name);
 
         match conn.execute(
@@ -180,9 +132,9 @@ impl<'a> InMemDB<'a, NodeInfoEntry> for NodeInfoDB<'a> {
     }
 }
 
-impl<'a> NodeInfoDB<'a> {
-    pub fn intialize(db_name: &'static str, conn: &'a Connection) -> Result<NodeInfoDB<'a>, rusqlite::Error> {
-        let mut db = NodeInfoDB { db_name, conn };
+impl NodeInfoDB {
+    pub fn intialize(db_name: &'static str, conn: &Connection) -> Result<NodeInfoDB, rusqlite::Error> {
+        let mut db = NodeInfoDB { db_name };
 
         match db.create_db(conn) {
             Ok(_) => Ok(db),
@@ -190,12 +142,12 @@ impl<'a> NodeInfoDB<'a> {
         }
     }
 
-    pub fn upsert(&self, ip: Ipv4Addr, port: u16, role: Role) -> Result<()> {
+    pub fn upsert(&self, conn: &Connection, ip: Ipv4Addr, port: u16, role: Role) -> Result<()> {
         log::debug!("Upsert..");
 
         let current = Local::now();
 
-        match self.conn.execute(
+        match conn.execute(
             format!(
                 "INSERT INTO {}
                 (node_id, ip, port, role, last_updated)
@@ -224,12 +176,10 @@ impl<'a> NodeInfoDB<'a> {
         Ok(())
     }
 
-    pub fn get_node_info(&self, ip: Ipv4Addr, port: u16) -> Result<Vec<NodeInfoEntry>> {
-        let node_id = conv_addr2id(&ip, port);
+    pub fn get_node_info(&self, conn: &Connection, ip: Ipv4Addr, port: u16) -> Result<Vec<NodeInfoEntry>> {
+        let node_id = utils::conv_addr2id(&ip, port);
 
-        let mut stmt = self
-            .conn
-            .prepare(format!("SELECT * FROM {} WHERE node_id = ?1;", self.db_name).as_str())?;
+        let mut stmt = conn.prepare(format!("SELECT * FROM {} WHERE node_id = ?1;", self.db_name).as_str())?;
         let rows = stmt.query_map([&node_id], |row| {
             log::debug!("inside: {:?}", row.get::<usize, String>(3));
 
@@ -254,10 +204,8 @@ impl<'a> NodeInfoDB<'a> {
         rows.collect()
     }
 
-    pub fn get_data_nodes(&self) -> Result<Vec<NodeInfoEntry>> {
-        let mut stmt = self
-            .conn
-            .prepare(format!("SELECT * FROM {} WHERE role = ?1;", self.db_name).as_str())?;
+    pub fn get_data_nodes(&self, conn: &Connection) -> Result<Vec<NodeInfoEntry>> {
+        let mut stmt = conn.prepare(format!("SELECT * FROM {} WHERE role = ?1;", self.db_name).as_str())?;
         let rows = stmt.query_map([&u8::from(&Role::Data)], |row| {
             let ip_str: String = row.get(1)?;
             let ip = match Ipv4Addr::from_str(ip_str.as_str()) {
@@ -280,41 +228,3 @@ impl<'a> NodeInfoDB<'a> {
         rows.collect()
     }
 }
-
-/// Convert address (including ip (in IpV4 format) and port) to node id which is later stored in in-memory DB
-pub fn conv_addr2id(ip: &Ipv4Addr, port: u16) -> String {
-    SocketAddrV4::new(ip.clone(), port).to_string()
-}
-
-pub fn conv_id2addr(node_id: String) -> Result<SocketAddr, ()> {
-    let idx_colon = match node_id.find(':') {
-        Some(idx) => idx,
-        None => {
-            log::debug!("Error as parsing node_id in string to IP and port: No colon found");
-            return Err(());
-        }
-    };
-    let ip = match Ipv4Addr::from_str(&node_id[0..idx_colon]) {
-        Ok(ip) => ip,
-        Err(err) => {
-            log::debug!(
-                "Error as parsing node_id in string to IP and port: err as parsing IP: {}",
-                err
-            );
-            return Err(());
-        }
-    };
-    let port = match u16::from_str(&node_id[idx_colon + 1..]) {
-        Ok(port) => port,
-        Err(err) => {
-            log::debug!(
-                "Error as parsing node_id in string to IP and port: Err as parsing port: {}",
-                err
-            );
-            return Err(());
-        }
-    };
-
-    Ok(SocketAddr::new(IpAddr::V4(ip), port))
-}
-
