@@ -129,8 +129,86 @@ impl<'a> Node for Data<'a> {
                     // Notify Master (aka itself) node the writing process is completed
                     forward_packet(
                         sndr_p2s,
-                        Packet::create_client_request_ack(Action::Write, &filename, addr_master.unwrap()),
+                        Packet::create_client_request_ack(Action::Write, &filename, addr_master.unwrap().clone()),
                     );
+                }
+
+                PacketId::RequestSendReplica => {
+                    // [Replication step 3]: Send nominated file to the deliver node
+                    let filename = packet.filename.unwrap();
+                    let binary = match file_utils.read_file(&filename) {
+                        Ok(binary) => binary,
+                        Err(err) => {
+                            log::error!("Err as reading file '{}': {}", &filename, err);
+                            continue;
+                        }
+                    };
+
+                    forward_packet(
+                        sndr_p2s,
+                        Packet::create_send_replica(packet.addr_deliver.unwrap(), filename, binary),
+                    );
+                }
+
+                PacketId::SendReplica => {
+                    // [Replication step 3] (continue): At deliver node: receive file name and binary, store it
+                    let filename = packet.filename.unwrap();
+                    let binary = match file_utils.read_file(&filename) {
+                        Ok(binary) => binary,
+                        Err(err) => {
+                            log::error!("Err as reading file '{}': {}", &filename, err);
+                            continue;
+                        }
+                    };
+
+                    // Store data
+                    if let Err(err) = file_utils.save_file(&filename, &binary) {
+                        log::error!("Cannot create new file: {}: Err: {}", filename, err);
+                        continue;
+                    };
+
+                    // Insert data
+                    let ip = match addr_current.ip() {
+                        IpAddr::V4(ip) => ip,
+                        _ => {
+                            log::error!("Cannot parse addr_current to IpV4 format: {}", { addr_current });
+                            continue;
+                        }
+                    };
+                    if let Err(err) = db_manager.upsert_file(FileInfoEntry::initialize(
+                        &filename,
+                        true,
+                        String::from(conv_addr2id(&ip, addr_current.port())),
+                    )) {
+                        log::error!("Error as upsert: {}", err);
+                        exit(1);
+                    }
+
+                    // [Replication step 4]: Send ACK to Master
+                    forward_packet(
+                        sndr_p2s,
+                        Packet::create_send_replica_ack(addr_master.unwrap().clone(), filename),
+                    );
+                }
+
+                PacketId::SendReplicaAck => {
+                    // [Replication step 5]: Master updates info DB which file is controlled by which node
+                    let filename = packet.filename.unwrap();
+                    let ip = match packet.addr_sender.unwrap().ip() {
+                        IpAddr::V4(ip) => ip,
+                        _ => {
+                            log::error!("Cannot parse addr_current to IpV4 format: {}", { addr_current });
+                            continue;
+                        }
+                    };
+                    if let Err(err) = db_manager.upsert_file(FileInfoEntry::initialize(
+                        &filename,
+                        true,
+                        String::from(conv_addr2id(&ip, addr_current.port())),
+                    )) {
+                        log::error!("Error as upsert: {}", err);
+                        exit(1);
+                    }
                 }
 
                 _ => {

@@ -193,18 +193,125 @@ impl<'a> Node for Master<'a> {
                         }
 
                         PacketId::ClientRequestAck => {
-                            // TODO: HoangLe [Jul-29]: Implement Replication
-                            
+                            // If write request: Master inserts info of node which is just receiving file from client
+                            if let Action::Write = packet.flag_read_write.unwrap() {
+                                let addr_sender = packet.addr_sender.as_ref().unwrap();
 
-                            // 1. Select suitable node to store the file
-                            let node_id = match db_manager.get_nodes_replication(1) {
+                                match addr_sender.ip() {
+                                    IpAddr::V4(ip) => {
+                                        if let Err(err) = db_manager.upsert_file(FileInfoEntry::initialize(
+                                            packet.filename.as_ref().unwrap(),
+                                            true,
+                                            conv_addr2id(&ip, addr_sender.port()),
+                                        )) {
+                                            log::error!("Error as upsert: {}", err);
+                                            exit(1);
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+
+                            // Start Replication process
+
+                            // [Replication step 1]: Select suitable node to store the file
+                            let addr_deliver = match db_manager.get_nodes_replication(1) {
                                 Ok(node_ids) => node_ids[0],
                                 Err(err) => {
                                     log::error!("{}", err);
                                     continue;
                                 }
                             };
+
+                            // [Replication step 2]: Notify node A to send file to node B with RequestSendReplica
+                            forward_packet(
+                                sndr_p2s,
+                                Packet::create_request_send_replica(
+                                    packet.addr_sender.as_ref().unwrap().clone(),
+                                    addr_deliver,
+                                    packet.filename.as_ref().unwrap().clone(),
+                                ),
+                            );
                         }
+
+                        PacketId::RequestSendReplica => {
+                            // [Replication step 3]: Send nominated file to the deliver node
+                            let filename = packet.filename.unwrap();
+                            let binary = match file_utils.read_file(&filename) {
+                                Ok(binary) => binary,
+                                Err(err) => {
+                                    log::error!("Err as reading file '{}': {}", &filename, err);
+                                    continue;
+                                }
+                            };
+
+                            forward_packet(
+                                sndr_p2s,
+                                Packet::create_send_replica(packet.addr_deliver.unwrap(), filename, binary),
+                            );
+                        }
+
+                        PacketId::SendReplica => {
+                            // [Replication step 3] (continue): At deliver node: receive file name and binary, store it
+                            let filename = packet.filename.unwrap();
+                            let binary = match file_utils.read_file(&filename) {
+                                Ok(binary) => binary,
+                                Err(err) => {
+                                    log::error!("Err as reading file '{}': {}", &filename, err);
+                                    continue;
+                                }
+                            };
+
+                            // Store data
+                            if let Err(err) = file_utils.save_file(&filename, &binary) {
+                                log::error!("Cannot create new file: {}: Err: {}", filename, err);
+                                continue;
+                            };
+
+                            // Insert data
+                            let ip = match addr_current.ip() {
+                                IpAddr::V4(ip) => ip,
+                                _ => {
+                                    log::error!("Cannot parse addr_current to IpV4 format: {}", { addr_current });
+                                    continue;
+                                }
+                            };
+                            if let Err(err) = db_manager.upsert_file(FileInfoEntry::initialize(
+                                &filename,
+                                true,
+                                String::from(conv_addr2id(&ip, addr_current.port())),
+                            )) {
+                                log::error!("Error as upsert: {}", err);
+                                exit(1);
+                            }
+
+                            // [Replication step 4]: Send ACK to Master
+                            forward_packet(
+                                sndr_p2s,
+                                Packet::create_send_replica_ack(addr_current.clone(), filename),
+                            );
+                        }
+
+                        PacketId::SendReplicaAck => {
+                            // [Replication step 5]: Master updates info DB which file is controlled by which node
+                            let filename = packet.filename.unwrap();
+                            let ip = match packet.addr_sender.unwrap().ip() {
+                                IpAddr::V4(ip) => ip,
+                                _ => {
+                                    log::error!("Cannot parse addr_current to IpV4 format: {}", { addr_current });
+                                    continue;
+                                }
+                            };
+                            if let Err(err) = db_manager.upsert_file(FileInfoEntry::initialize(
+                                &filename,
+                                true,
+                                String::from(conv_addr2id(&ip, addr_current.port())),
+                            )) {
+                                log::error!("Error as upsert: {}", err);
+                                exit(1);
+                            }
+                        }
+
                         _ => {
                             log::error!("Unsupported packet type: {}", packet);
                             continue;
