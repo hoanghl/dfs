@@ -76,6 +76,7 @@ pub struct Packet {
     // Attributes parsed from payload
     pub addr_master: Option<SocketAddr>,
     pub addr_data: Option<SocketAddr>,
+    pub addr_deliver: Option<SocketAddr>,
     pub role: Option<Role>,
     pub node_id: Option<String>,
     pub flag_read_write: Option<Action>,
@@ -213,6 +214,7 @@ impl Default for Packet {
             addr_rcv: None,
             addr_master: None,
             addr_data: None,
+            addr_deliver: None,
             role: None,
             node_id: None,
             flag_read_write: None,
@@ -329,15 +331,77 @@ impl Packet {
                     log::error!("Parsing HEARTBEAT_ACK: Cannot parse node_id: {err}");
                 }
             },
+
             PacketId::RequestSendReplica => {
-                // TODO: HoangLe [May-02]: Implement this
+                // Parse addr of deliver node from payload
+                let ip_node_deliver = Ipv4Addr::new(payload[0], payload[1], payload[2], payload[3]);
+                let port_node_deliver =
+                    u16::from_be_bytes(payload[4..6].try_into().expect("Cannot cast last 2 bytes to array"));
+                packet.addr_deliver = Some(SocketAddr::V4(SocketAddrV4::new(ip_node_deliver, port_node_deliver)));
+
+                // Parse 'filename'
+                match String::from_utf8(payload[6..].to_vec()) {
+                    Ok(filename) => {
+                        packet.filename = Some(filename);
+                    }
+                    Err(err) => {
+                        log::error!(
+                            "Receiving RequestFromClient from: {:?}: Cannot parse filename: {}",
+                            packet.addr_sender,
+                            err
+                        );
+                        return Err(ParseError::stream_reading_err());
+                    }
+                };
             }
+
             PacketId::SendReplica => {
-                // TODO: HoangLe [May-02]: Implement this
+                // Loop over payload to find position of 2 consecutive character '|'
+                let mut last_idx_sep_tok: Option<usize> = None;
+                for (idx, byte) in payload.iter().enumerate() {
+                    last_idx_sep_tok = match byte {
+                        &BYTE_SEP_CHARACTER => match last_idx_sep_tok {
+                            None => Some(idx),
+                            Some(_) => {
+                                // Found 2 consecutive separating characters '||'
+                                break;
+                            }
+                        },
+                        _ => None,
+                    };
+                }
+
+                // Handle some corner cases
+                if last_idx_sep_tok.is_none() {
+                    log::error!("Reading ClientUpload: Not found 2 consecutive separating characters '||'");
+                    return Err(ParseError::stream_reading_err());
+                }
+                if last_idx_sep_tok.unwrap() + 2 == payload_size {
+                    log::error!("Reading ClientUpload: Found 2 consecutive separating characters '||' at the end of payload => No binary found");
+                    return Err(ParseError::stream_reading_err());
+                }
+
+                // Parse field 'filename' and 'binary'
+                packet.filename = match String::from_utf8(payload[0..last_idx_sep_tok.unwrap()].to_vec()) {
+                    Ok(filename) => Some(filename),
+                    Err(err) => {
+                        log::error!("Reading ClientUpload: Got error as parsing filename: {}", err);
+                        None
+                    }
+                };
+                packet.binary = Some(payload[last_idx_sep_tok.unwrap() + 2..payload_size].to_vec());
             }
+
             PacketId::SendReplicaAck => {
-                // TODO: HoangLe [May-02]: Implement this
+                packet.filename = match String::from_utf8(payload) {
+                    Ok(filename) => Some(filename),
+                    Err(err) => {
+                        log::error!("Reading ClientUpload: Got error as parsing filename: {}", err);
+                        None
+                    }
+                };
             }
+
             PacketId::AskIp => match payload_size {
                 2 => {
                     // Parse port of thread:Receiver of sender
@@ -353,6 +417,7 @@ impl Packet {
                     return Err(ParseError::mismatched_packet_size(packet_id, bytes.len(), payload_size));
                 }
             },
+
             PacketId::AskIpAck => match payload_size {
                 0 => {
                     return Err(ParseError::unavailable_master_ip());
@@ -375,6 +440,7 @@ impl Packet {
                     return Err(ParseError::incorrect_payload_size_ask_ip_ack(payload.len()));
                 }
             },
+
             PacketId::RequestFromClient => {
                 // Parse 'flag_read_write'
                 match payload[0] {
@@ -482,7 +548,36 @@ impl Packet {
                 // TODO: HoangLe [May-02]: Implement this
             }
             PacketId::ClientRequestAck => {
-                // TODO: HoangLe [May-02]: Implement this
+                // Parse 'flag_read_write'
+                match payload[0] {
+                    0 | 1 => {
+                        packet.flag_read_write = Some(Action::from(payload[0]));
+                    }
+                    _ => {
+                        log::error!(
+                            "Receiving RequestFromClient from: {:?}: Invalid 'flag_read_write': {}",
+                            packet.addr_sender,
+                            payload[0]
+                        );
+                        return Err(ParseError::stream_reading_err());
+                    }
+                }
+
+                // Parse 'port'
+                packet.addr_sender.as_mut().unwrap().set_port(u16::from_be_bytes(
+                    payload[1..3]
+                        .try_into()
+                        .expect("Cannot parse 2 bytes in payload to port value"),
+                ));
+
+                // Parse 'filename'
+                packet.filename = match String::from_utf8(payload[3..].to_vec()) {
+                    Ok(filename) => Some(filename),
+                    Err(err) => {
+                        log::error!("Reading ClientUpload: Got error as parsing filename: {}", err);
+                        None
+                    }
+                };
             }
             PacketId::StateSync => {
                 // TODO: HoangLe [May-02]: Implement this
@@ -504,7 +599,9 @@ impl Packet {
                     return Err(ParseError::mismatched_packet_size(packet_id, bytes.len(), payload_size));
                 }
             },
+
             PacketId::ClientUploadAck => {}
+
             _ => return Err(ParseError::incorrect_packet_id(packet_id as u8)),
         }
 
@@ -540,15 +637,68 @@ impl Packet {
         }
     }
 
-    // pub fn create_RequestSendReplica() -> Packet {
-    //     // TODO: HoangLe [Apr-28]: Implement this
-    // }
-    // pub fn create_SendReplica() -> Packet {
-    //     // TODO: HoangLe [Apr-28]: Implement this
-    // }
-    // pub fn create_SendReplicaAck() -> Packet {
-    //     // TODO: HoangLe [Apr-28]: Implement this
-    // }
+    pub fn create_request_send_replica(addr_rcv: SocketAddr, addr_deliver: SocketAddr, filename: String) -> Packet {
+        let mut packet = Packet {
+            packet_id: PacketId::RequestSendReplica,
+            addr_rcv: Some(addr_rcv),
+            ..Default::default()
+        };
+
+        // Craft payload: Contain 1) IP and port of node to which the file will be delivered and 2) filename
+        if let IpAddr::V4(ip) = addr_deliver.ip() {
+            // Ip and port
+            let mut payload = ip.octets().to_vec();
+            payload.extend_from_slice(&addr_deliver.port().to_be_bytes());
+
+            // Filename
+            payload.extend_from_slice(filename.as_bytes());
+
+            packet.payload = Some(payload);
+        }
+
+        packet
+    }
+
+    pub fn create_send_replica(addr_rcv: SocketAddr, filename: String, binary: Vec<u8>) -> Packet {
+        let mut packet = Packet {
+            packet_id: PacketId::SendReplica,
+            addr_rcv: Some(addr_rcv),
+            ..Default::default()
+        };
+
+        let mut payload = Vec::<u8>::new();
+
+        // Filename
+        payload.extend_from_slice(filename.as_bytes());
+
+        // Separator characters
+        payload.push(BYTE_SEP_CHARACTER);
+        payload.push(BYTE_SEP_CHARACTER);
+
+        // File bytes
+        payload.extend(binary.iter());
+
+        packet.payload = Some(payload);
+
+        packet
+    }
+
+    pub fn create_send_replica_ack(addr_rcv: SocketAddr, filename: String) -> Packet {
+        let mut packet = Packet {
+            packet_id: PacketId::SendReplicaAck,
+            addr_rcv: Some(addr_rcv),
+            ..Default::default()
+        };
+
+        let mut payload = Vec::<u8>::new();
+
+        // Filename
+        payload.extend_from_slice(filename.as_bytes());
+
+        packet.payload = Some(payload);
+
+        packet
+    }
 
     pub fn create_ask_ip(addr_rcv: SocketAddr, port: u16) -> Packet {
         // Craft payload
@@ -647,9 +797,22 @@ impl Packet {
     // pub fn create_DataNodeSendData() -> Packet {
     //     // TODO: HoangLe [Apr-28]: Implement this
     // }
-    // pub fn create_ClientRequestAck() -> Packet {
-    //     // TODO: HoangLe [Apr-28]: Implement this
-    // }
+    pub fn create_client_request_ack(action: Action, port: u16, filename: &String, addr_master: SocketAddr) -> Packet {
+        let mut packet = Packet {
+            packet_id: PacketId::ClientRequestAck,
+            addr_rcv: Some(addr_master),
+            ..Default::default()
+        };
+
+        let mut payload = Vec::<u8>::new();
+        payload.push(action as u8);
+        payload.extend_from_slice(&port.to_be_bytes());
+        payload.extend_from_slice(filename.as_bytes());
+
+        packet.payload = Some(payload);
+
+        packet
+    }
     // pub fn create_StateSync() -> Packet {
     //     // TODO: HoangLe [Apr-28]: Implement this
     // }
@@ -683,7 +846,7 @@ impl Packet {
 }
 
 pub fn forward_packet(sndr_p2s: &Sender<Packet>, packet: Packet) {
-    log::debug!("packet size: {}", packet.to_bytes().len());
+    // log::debug!("packet size: {}", packet.to_bytes().len());
 
     if let Err(err) = sndr_p2s.send(packet) {
         log::error!("Err as sending from thread:Processor -> thread:Sender: {}", err);

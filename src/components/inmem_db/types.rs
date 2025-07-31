@@ -65,8 +65,6 @@ impl FileInfoDB {
     }
 
     pub fn upsert(&self, conn: &Connection, info: FileInfoEntry) -> Result<()> {
-        log::debug!("Upsert..");
-
         let current = Local::now();
 
         match conn.execute(
@@ -87,6 +85,22 @@ impl FileInfoDB {
             Ok(size) => log::debug!("Upserted: {}", size),
             Err(err) => log::error!("{}", err),
         };
+
+        Ok(())
+    }
+
+    pub fn print_all_db(&self, conn: &Connection) -> Result<()> {
+        let mut stmt = conn.prepare(format!("SELECT * FROM {};", self.db_name).as_str())?;
+        let _ = stmt.query_map([], |row| {
+            log::debug!("inside: {:?}", row.get::<usize, String>(3));
+
+            Ok(FileInfoEntry {
+                filename: row.get(0)?,
+                is_local: row.get::<usize, i32>(1)? == 1,
+                node_id: row.get(3)?,
+                last_updated: Some(row.get::<usize, String>(4)?.parse().unwrap()),
+            })
+        })?;
 
         Ok(())
     }
@@ -143,8 +157,6 @@ impl NodeInfoDB {
     }
 
     pub fn upsert(&self, conn: &Connection, ip: Ipv4Addr, port: u16, role: Role) -> Result<()> {
-        log::debug!("Upsert..");
-
         let current = Local::now();
 
         match conn.execute(

@@ -1,7 +1,7 @@
 use crate::components::{
     configs::Configs,
     entity::nodes::Node,
-    errors::NodeCreationError,
+    errors::{NodeCreationError, NodeCreationErrorCode},
     packets::{forward_packet, wait_packet, Action, Packet, PacketId},
 };
 use log;
@@ -113,18 +113,25 @@ impl<'conf> Client<'conf> {
     }
 }
 
-impl<'a> Node for Client<'a> {
+impl<'conf> Node for Client<'conf> {
     fn trigger_processor(
         &mut self,
         rcvr_r2p: &Receiver<Packet>,
         sndr_p2s: &Sender<Packet>,
     ) -> Result<(), NodeCreationError> {
+        if let None = self.configs.args.action {
+            log::error!("args.action must not be None");
+
+            return Err(NodeCreationError {
+                error_code: NodeCreationErrorCode::ProcessorThreadErr,
+            });
+        }
         match self.configs.args.action.as_ref().unwrap() {
             Action::Read => {
-                // TODO: HoangLe [Jun-14]: Implement this
+                // TODO: HoangLe [Jul-29]: Implement this
             }
             Action::Write => {
-                self.send_file(&rcvr_r2p, &sndr_p2s);
+                self.send_file(rcvr_r2p, sndr_p2s);
             }
         }
 

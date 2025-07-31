@@ -27,9 +27,9 @@ pub struct NodeInfoEntry {
 // ================================================
 
 impl FileInfoEntry {
-    pub fn initialize(filename: String, is_local: bool, node_id: String) -> FileInfoEntry {
+    pub fn initialize(filename: &String, is_local: bool, node_id: String) -> FileInfoEntry {
         FileInfoEntry {
-            filename,
+            filename: filename.clone(),
             is_local,
 
             node_id,

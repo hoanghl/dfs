@@ -136,7 +136,7 @@ impl<'a> Node for Master<'a> {
                                     // TODO: HoangLe [Jun-14]: Implement this
                                 }
                                 Action::Write => {
-                                    let node_ids = match db_manager.get_nodes_replication(2) {
+                                    let node_ids = match db_manager.get_nodes_replication(1) {
                                         Ok(node_ids) => node_ids,
                                         Err(err) => {
                                             log::error!("{}", err);
@@ -149,8 +149,6 @@ impl<'a> Node for Master<'a> {
                                         sndr_p2s,
                                         Packet::create_response_node_ip(packet.addr_sender.unwrap(), node_rcv_data),
                                     );
-
-                                    // TODO: HoangLe [Jun-22]: Continue with Replication flow
                                 }
                             }
                         }
@@ -173,7 +171,7 @@ impl<'a> Node for Master<'a> {
                             };
 
                             if let Err(err) = db_manager.upsert_file(FileInfoEntry::initialize(
-                                filename,
+                                &filename,
                                 true,
                                 String::from(conv_addr2id(&ip, addr_current.port())),
                             )) {
@@ -181,12 +179,156 @@ impl<'a> Node for Master<'a> {
                                 exit(1);
                             }
 
-                            // Response to client
+                            // Send ACK to client
                             forward_packet(
                                 sndr_p2s,
                                 Packet::create_client_upload_ack(packet.addr_sender.clone().unwrap()),
                             );
+
+                            // Notify Master (aka itself) node the writing process is completed
+                            forward_packet(
+                                sndr_p2s,
+                                Packet::create_client_request_ack(
+                                    Action::Write,
+                                    addr_current.port(),
+                                    &filename,
+                                    addr_current,
+                                ),
+                            );
                         }
+
+                        PacketId::ClientRequestAck => {
+                            // If write request: Master inserts info of node which is just receiving file from client
+                            if let Action::Write = packet.flag_read_write.unwrap() {
+                                let addr_sender = packet.addr_sender.as_ref().unwrap();
+
+                                match addr_sender.ip() {
+                                    IpAddr::V4(ip) => {
+                                        if let Err(err) = db_manager.upsert_file(FileInfoEntry::initialize(
+                                            packet.filename.as_ref().unwrap(),
+                                            true,
+                                            conv_addr2id(&ip, addr_sender.port()),
+                                        )) {
+                                            log::error!("Error as upsert: {}", err);
+                                            exit(1);
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+
+                            // Start Replication process
+
+                            log::debug!("Start Replication process");
+
+                            // [Replication step 1]: Select suitable node to store the file
+                            let addr_deliver = match db_manager.get_nodes_replication(2) {
+                                Ok(node_ids) => node_ids[0],
+                                Err(err) => {
+                                    log::error!("{}", err);
+                                    continue;
+                                }
+                            };
+
+                            // [Replication step 2]: Notify node A to send file to node B with RequestSendReplica
+                            forward_packet(
+                                sndr_p2s,
+                                Packet::create_request_send_replica(
+                                    packet.addr_sender.as_ref().unwrap().clone(),
+                                    addr_deliver,
+                                    packet.filename.as_ref().unwrap().clone(),
+                                ),
+                            );
+
+                            log::debug!("Replication process: done step 2");
+                        }
+
+                        PacketId::RequestSendReplica => {
+                            // [Replication step 3]: Send nominated file to the deliver node
+                            let filename = packet.filename.unwrap();
+                            let binary = match file_utils.read_file(&filename) {
+                                Ok(binary) => binary,
+                                Err(err) => {
+                                    log::error!("Err as reading file '{}': {}", &filename, err);
+                                    continue;
+                                }
+                            };
+
+                            forward_packet(
+                                sndr_p2s,
+                                Packet::create_send_replica(packet.addr_deliver.unwrap(), filename, binary),
+                            );
+
+                            log::debug!("Replication process: done step 3.1");
+                        }
+
+                        PacketId::SendReplica => {
+                            // [Replication step 3] (continue): At deliver node: receive file name and binary, store it
+                            let filename = packet.filename.unwrap();
+                            let binary = match file_utils.read_file(&filename) {
+                                Ok(binary) => binary,
+                                Err(err) => {
+                                    log::error!("Err as reading file '{}': {}", &filename, err);
+                                    continue;
+                                }
+                            };
+
+                            // Store data
+                            if let Err(err) = file_utils.save_file(&filename, &binary) {
+                                log::error!("Cannot create new file: {}: Err: {}", filename, err);
+                                continue;
+                            };
+
+                            // Insert data
+                            let ip = match addr_current.ip() {
+                                IpAddr::V4(ip) => ip,
+                                _ => {
+                                    log::error!("Cannot parse addr_current to IpV4 format: {}", { addr_current });
+                                    continue;
+                                }
+                            };
+                            if let Err(err) = db_manager.upsert_file(FileInfoEntry::initialize(
+                                &filename,
+                                true,
+                                String::from(conv_addr2id(&ip, addr_current.port())),
+                            )) {
+                                log::error!("Error as upsert: {}", err);
+                                exit(1);
+                            }
+
+                            log::debug!("Replication process: done step 3.2");
+
+                            // [Replication step 4]: Send ACK to Master
+                            forward_packet(
+                                sndr_p2s,
+                                Packet::create_send_replica_ack(addr_current.clone(), filename),
+                            );
+
+                            log::debug!("Replication process: done step 4");
+                        }
+
+                        PacketId::SendReplicaAck => {
+                            // [Replication step 5]: Master updates info DB which file is controlled by which node
+                            let filename = packet.filename.unwrap();
+                            let ip = match packet.addr_sender.unwrap().ip() {
+                                IpAddr::V4(ip) => ip,
+                                _ => {
+                                    log::error!("Cannot parse addr_current to IpV4 format: {}", { addr_current });
+                                    continue;
+                                }
+                            };
+                            if let Err(err) = db_manager.upsert_file(FileInfoEntry::initialize(
+                                &filename,
+                                true,
+                                String::from(conv_addr2id(&ip, addr_current.port())),
+                            )) {
+                                log::error!("Error as upsert: {}", err);
+                                exit(1);
+                            }
+
+                            log::debug!("Replication process: done step 5");
+                        }
+
                         _ => {
                             log::error!("Unsupported packet type: {}", packet);
                             continue;
@@ -195,41 +337,42 @@ impl<'a> Node for Master<'a> {
                 }
                 Err(_) => {
                     // Check timer and send Heartbeat
-                    if last_ts.is_none() {
-                        last_ts = Some(SystemTime::now());
-                        continue;
-                    }
-                    match SystemTime::now().duration_since(last_ts.unwrap()) {
-                        Ok(n) => {
-                            if n.as_secs() >= self.configs.interval_heartbeat {
-                                last_ts = Some(SystemTime::now());
+                    // FIXME: HoangLe [Jul-29]: Enable this after testing
+                    // if last_ts.is_none() {
+                    //     last_ts = Some(SystemTime::now());
+                    //     continue;
+                    // }
+                    // match SystemTime::now().duration_since(last_ts.unwrap()) {
+                    //     Ok(n) => {
+                    //         if n.as_secs() >= self.configs.interval_heartbeat {
+                    //             last_ts = Some(SystemTime::now());
 
-                                // Send heartbeat
-                                if let Ok(data_nodes) = db_manager.get_data_nodes() {
-                                    for node in &data_nodes {
-                                        match node.ip {
-                                            None => {
-                                                log::error!(
-                                                    "Cannot retrieve ip from node with node_id = {}",
-                                                    node.node_id
-                                                );
-                                                continue;
-                                            }
-                                            Some(ip) => {
-                                                let addr = SocketAddr::V4(SocketAddrV4::new(ip, node.port));
+                    //             // Send heartbeat
+                    //             if let Ok(data_nodes) = db_manager.get_data_nodes() {
+                    //                 for node in &data_nodes {
+                    //                     match node.ip {
+                    //                         None => {
+                    //                             log::error!(
+                    //                                 "Cannot retrieve ip from node with node_id = {}",
+                    //                                 node.node_id
+                    //                             );
+                    //                             continue;
+                    //                         }
+                    //                         Some(ip) => {
+                    //                             let addr = SocketAddr::V4(SocketAddrV4::new(ip, node.port));
 
-                                                log::info!("Send HEARTBEAT to {}", addr);
-                                                forward_packet(sndr_p2s, Packet::create_heartbeat(addr));
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Err(err) => {
-                            log::error!("{}", err);
-                        }
-                    }
+                    //                             log::info!("Send HEARTBEAT to {}", addr);
+                    //                             forward_packet(sndr_p2s, Packet::create_heartbeat(addr));
+                    //                         }
+                    //                     }
+                    //                 }
+                    //             }
+                    //         }
+                    //     }
+                    //     Err(err) => {
+                    //         log::error!("{}", err);
+                    //     }
+                    // }
                 }
             };
         }
