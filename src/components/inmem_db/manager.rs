@@ -95,6 +95,7 @@ impl<'dbmngr> DBManager<'dbmngr> {
             format!(
                 "SELECT
                     t1.node_id
+                    , COALESCE(count, 0) as count
                 FROM {name_node_db} t1
                 LEFT JOIN (
                     SELECT
@@ -117,7 +118,11 @@ impl<'dbmngr> DBManager<'dbmngr> {
         };
 
         let rows = stmt.query_map(params![n], |row| {
-            log::debug!("get_nodes_replication: inside: {:?}", row.get::<usize, String>(0));
+            log::debug!(
+                "get_nodes_replication: inside: {:?} - {:?}",
+                row.get::<usize, String>(0),
+                row.get::<usize, i32>(1)
+            );
             let node_id = row.get::<usize, String>(0)?;
             match conv_id2addr(node_id) {
                 Ok(addr) => Ok(addr),
@@ -138,5 +143,11 @@ impl<'dbmngr> DBManager<'dbmngr> {
 
     pub fn get_data_nodes(&mut self) -> Result<Vec<NodeInfoEntry>> {
         self.db_node.as_mut().unwrap().get_data_nodes(&self.conn)
+    }
+
+    pub fn print_all_db_file(&mut self) -> Result<()> {
+        let _ = self.db_file.as_ref().unwrap().print_all_db(&self.conn);
+
+        Ok(())
     }
 }

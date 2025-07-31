@@ -40,12 +40,14 @@ For Data:
 1. Client connects to DNS to ask the IP of current Master [packet *AskIp*]
 2. DNS responses the IP [packet *AskIpAck*]
 3. Client connects to the current Master to ask to write specific file [packet *RequestFromClient*]
-4. Master responses the IP of the Data node is ready to receive file [packet *ResponseNodeIp*]
+4. Master responses the IP of a receiving node (this node can either a Data node or Master node) is ready to receive file [packet *ResponseNodeIp*]
 
 In this step, Master can designates itself or another Data node inside the network and embeds that node's address to packet _ResponseNodeIp_.
 
-5. Client connects to Data node to write file [packet *ClientUpload*]
-6. When client finishes writing, Data node notifies the Master node the writing process is done [packet *ClientRequestAck*]
+5. Client connects to Receiving node to write file [packet *ClientUpload*]
+6. When client finishes writing, Receiving node:
+   1. notifies the Master node the writing process is done [packet *ClientRequestAck*]
+   1. sends ACK to client [packet *ClientUploadAck*]
 7. The current Master node selects the suitable Data node different from the one which is newly received file from the client and triggers [**_Replication process_**](#replication).
 
 ### 4. Heartbeat

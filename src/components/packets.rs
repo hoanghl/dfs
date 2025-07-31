@@ -563,7 +563,15 @@ impl Packet {
                     }
                 }
 
-                packet.filename = match String::from_utf8(payload[1..].to_vec()) {
+                // Parse 'port'
+                packet.addr_sender.as_mut().unwrap().set_port(u16::from_be_bytes(
+                    payload[1..3]
+                        .try_into()
+                        .expect("Cannot parse 2 bytes in payload to port value"),
+                ));
+
+                // Parse 'filename'
+                packet.filename = match String::from_utf8(payload[3..].to_vec()) {
                     Ok(filename) => Some(filename),
                     Err(err) => {
                         log::error!("Reading ClientUpload: Got error as parsing filename: {}", err);
@@ -677,7 +685,7 @@ impl Packet {
 
     pub fn create_send_replica_ack(addr_rcv: SocketAddr, filename: String) -> Packet {
         let mut packet = Packet {
-            packet_id: PacketId::SendReplica,
+            packet_id: PacketId::SendReplicaAck,
             addr_rcv: Some(addr_rcv),
             ..Default::default()
         };
@@ -789,7 +797,7 @@ impl Packet {
     // pub fn create_DataNodeSendData() -> Packet {
     //     // TODO: HoangLe [Apr-28]: Implement this
     // }
-    pub fn create_client_request_ack(action: Action, filename: &String, addr_master: SocketAddr) -> Packet {
+    pub fn create_client_request_ack(action: Action, port: u16, filename: &String, addr_master: SocketAddr) -> Packet {
         let mut packet = Packet {
             packet_id: PacketId::ClientRequestAck,
             addr_rcv: Some(addr_master),
@@ -798,6 +806,7 @@ impl Packet {
 
         let mut payload = Vec::<u8>::new();
         payload.push(action as u8);
+        payload.extend_from_slice(&port.to_be_bytes());
         payload.extend_from_slice(filename.as_bytes());
 
         packet.payload = Some(payload);

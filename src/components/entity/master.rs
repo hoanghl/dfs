@@ -188,7 +188,12 @@ impl<'a> Node for Master<'a> {
                             // Notify Master (aka itself) node the writing process is completed
                             forward_packet(
                                 sndr_p2s,
-                                Packet::create_client_request_ack(Action::Write, &filename, addr_current),
+                                Packet::create_client_request_ack(
+                                    Action::Write,
+                                    addr_current.port(),
+                                    &filename,
+                                    addr_current,
+                                ),
                             );
                         }
 
@@ -214,8 +219,10 @@ impl<'a> Node for Master<'a> {
 
                             // Start Replication process
 
+                            log::debug!("Start Replication process");
+
                             // [Replication step 1]: Select suitable node to store the file
-                            let addr_deliver = match db_manager.get_nodes_replication(1) {
+                            let addr_deliver = match db_manager.get_nodes_replication(2) {
                                 Ok(node_ids) => node_ids[0],
                                 Err(err) => {
                                     log::error!("{}", err);
@@ -232,6 +239,8 @@ impl<'a> Node for Master<'a> {
                                     packet.filename.as_ref().unwrap().clone(),
                                 ),
                             );
+
+                            log::debug!("Replication process: done step 2");
                         }
 
                         PacketId::RequestSendReplica => {
@@ -249,6 +258,8 @@ impl<'a> Node for Master<'a> {
                                 sndr_p2s,
                                 Packet::create_send_replica(packet.addr_deliver.unwrap(), filename, binary),
                             );
+
+                            log::debug!("Replication process: done step 3.1");
                         }
 
                         PacketId::SendReplica => {
@@ -285,11 +296,15 @@ impl<'a> Node for Master<'a> {
                                 exit(1);
                             }
 
+                            log::debug!("Replication process: done step 3.2");
+
                             // [Replication step 4]: Send ACK to Master
                             forward_packet(
                                 sndr_p2s,
                                 Packet::create_send_replica_ack(addr_current.clone(), filename),
                             );
+
+                            log::debug!("Replication process: done step 4");
                         }
 
                         PacketId::SendReplicaAck => {
@@ -310,6 +325,8 @@ impl<'a> Node for Master<'a> {
                                 log::error!("Error as upsert: {}", err);
                                 exit(1);
                             }
+
+                            log::debug!("Replication process: done step 5");
                         }
 
                         _ => {
