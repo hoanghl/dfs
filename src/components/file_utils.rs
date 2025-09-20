@@ -13,14 +13,18 @@ pub struct FileUtils<'a> {
 
 impl<'a> FileUtils<'a> {
     pub fn new(conf: &'a Configs) -> Result<FileUtils<'a>, io::Error> {
-        match fs::create_dir_all(Path::new(&conf.args.dir_data)) {
+        match fs::create_dir_all(Path::new(&conf.dir_data)) {
             Ok(_) => Ok(FileUtils { conf }),
             Err(err) => Err(err),
         }
     }
 
-    pub fn save_file(&self, filename: &String, bytes: &Vec<u8>) -> Result<(), io::Error> {
-        let path = Path::new(&self.conf.args.dir_data).join(filename);
+    pub fn save_file(
+        &self,
+        filename: &String,
+        bytes: &Vec<u8>,
+    ) -> Result<(), io::Error> {
+        let path = Path::new(&self.conf.dir_data).join(filename);
 
         if path.exists() {
             log::warn!("Path existed. Write new file: {}", filename);
@@ -29,7 +33,11 @@ impl<'a> FileUtils<'a> {
         let mut file = match File::create(path) {
             Ok(file) => file,
             Err(err) => {
-                log::error!("Cannot create new file: {}: Err: {}", filename, err);
+                log::error!(
+                    "Cannot create new file: {}: Err: {}",
+                    filename,
+                    err
+                );
                 return Err(err);
             }
         };
@@ -38,7 +46,7 @@ impl<'a> FileUtils<'a> {
     }
 
     pub fn read_file(&self, filename: &String) -> Result<Vec<u8>, ErrorKind> {
-        let path = Path::new(&self.conf.args.dir_data).join(filename);
+        let path = Path::new(&self.conf.dir_data).join(filename);
 
         if !path.exists() {
             return Err(ErrorKind::NotFound);
@@ -48,7 +56,11 @@ impl<'a> FileUtils<'a> {
         let mut file = match File::open(path) {
             Ok(file) => file,
             Err(err) => {
-                log::error!("Cannot create new file: {}: Err: {}", filename, err);
+                log::error!(
+                    "Cannot create new file: {}: Err: {}",
+                    filename,
+                    err
+                );
                 return Err(ErrorKind::InvalidData);
             }
         };

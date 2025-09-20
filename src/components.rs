@@ -1,3 +1,4 @@
+pub mod args;
 pub mod configs;
 pub mod entity;
 pub mod errors;

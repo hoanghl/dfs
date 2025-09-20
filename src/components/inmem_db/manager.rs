@@ -15,7 +15,9 @@ pub struct DBManager<'dbmngr> {
 }
 
 impl<'dbmngr> DBManager<'dbmngr> {
-    pub fn new(conf: &'dbmngr Configs) -> Result<DBManager<'dbmngr>, DBManagerCreationError> {
+    pub fn new(
+        conf: &'dbmngr Configs,
+    ) -> Result<DBManager<'dbmngr>, DBManagerCreationError> {
         let conn = match Connection::open_in_memory() {
             Ok(conn) => conn,
             Err(err) => {
@@ -34,7 +36,10 @@ impl<'dbmngr> DBManager<'dbmngr> {
         })
     }
 
-    pub fn initialize_db(&mut self, role: Role) -> Result<(), DBManagerCreationError> {
+    pub fn initialize_db(
+        &mut self,
+        role: Role,
+    ) -> Result<(), DBManagerCreationError> {
         self.db_file = match FileInfoDB::intialize(NAME_DB_FILE, &self.conn) {
             Ok(db) => Some(db),
             Err(err) => {
@@ -48,22 +53,32 @@ impl<'dbmngr> DBManager<'dbmngr> {
         // Add itself to the list of nodes if Master
         self.db_node = match role {
             Role::Master => {
-                let db_node = match NodeInfoDB::intialize(NAME_DB_NODE, &self.conn) {
-                    Ok(db) => db,
-                    Err(err) => {
-                        log::error!("Error as initializing in-memory DB: {}", err);
-                        return Err(DBManagerCreationError {
-                            error_code: DBManagerCreationErrorCode::Default,
-                        });
-                    }
-                };
+                let db_node =
+                    match NodeInfoDB::intialize(NAME_DB_NODE, &self.conn) {
+                        Ok(db) => db,
+                        Err(err) => {
+                            log::error!(
+                                "Error as initializing in-memory DB: {}",
+                                err
+                            );
+                            return Err(DBManagerCreationError {
+                                error_code: DBManagerCreationErrorCode::Default,
+                            });
+                        }
+                    };
 
-                let addr_current = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), self.conf.args.port));
+                let addr_current = SocketAddr::V4(SocketAddrV4::new(
+                    Ipv4Addr::new(127, 0, 0, 1),
+                    self.conf.port,
+                ));
                 match addr_current {
                     SocketAddr::V4(addr) => {
-                        if let Err(err) =
-                            db_node.upsert(&self.conn, addr.ip().clone(), addr_current.port(), Role::Master)
-                        {
+                        if let Err(err) = db_node.upsert(
+                            &self.conn,
+                            addr.ip().clone(),
+                            addr_current.port(),
+                            Role::Master,
+                        ) {
                             log::error!("Error as UPSERT: {}", err);
 
                             return Err(DBManagerCreationError {
@@ -133,8 +148,16 @@ impl<'dbmngr> DBManager<'dbmngr> {
         rows.collect()
     }
 
-    pub fn upsert_node(&mut self, ip: Ipv4Addr, port: u16, role: Role) -> Result<(), rusqlite::Error> {
-        self.db_node.as_mut().unwrap().upsert(&self.conn, ip, port, role)
+    pub fn upsert_node(
+        &mut self,
+        ip: Ipv4Addr,
+        port: u16,
+        role: Role,
+    ) -> Result<(), rusqlite::Error> {
+        self.db_node
+            .as_mut()
+            .unwrap()
+            .upsert(&self.conn, ip, port, role)
     }
 
     pub fn upsert_file(&mut self, info: FileInfoEntry) -> Result<()> {
