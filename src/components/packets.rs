@@ -1,4 +1,6 @@
-use crate::components::{entity::node_roles::Role, errors::ParseError, inmem_db::utils::*};
+use crate::components::{
+    entity::node_roles::Role, errors::ParseError, inmem_db::utils::*,
+};
 use std::{
     convert::From,
     fmt::{self},
@@ -16,7 +18,7 @@ use std::{
 
 const BYTE_SEP_CHARACTER: u8 = 124; // byte value of character '|'
 const SIZE_HEADER: usize = 5;
-const BUFF_LEN: usize = 1024;
+const BUFF_LEN: usize = 16280;
 
 #[derive(Clone)]
 #[repr(u8)]
@@ -36,7 +38,9 @@ impl FromStr for Action {
             "write" => {
                 return Ok(Self::Write);
             }
-            _ => Err(format!("Cannot parse given string to Action. Got: {}", s)),
+            _ => {
+                Err(format!("Cannot parse given string to Action. Got: {}", s))
+            }
         }
     }
 }
@@ -230,7 +234,11 @@ impl fmt::Display for Packet {
             Some(addr_sender) => format!("{}", addr_sender),
             None => String::from("None"),
         };
-        write!(f, "Packet: packet_id: {}, addr_sender: {}", self.packet_id, addr_sender)
+        write!(
+            f,
+            "Packet: packet_id: {}, addr_sender: {}",
+            self.packet_id, addr_sender
+        )
     }
 }
 
@@ -240,7 +248,11 @@ impl fmt::Debug for Packet {
             Some(addr_sender) => format!("{}", addr_sender),
             None => String::from("None"),
         };
-        write!(f, "Packet: packet_id: {}, addr_sender: {}", self.packet_id, addr_sender)
+        write!(
+            f,
+            "Packet: packet_id: {}, addr_sender: {}",
+            self.packet_id, addr_sender
+        )
     }
 }
 
@@ -285,13 +297,9 @@ impl Packet {
             let n = stream.read(&mut buff).unwrap();
             if n == 0 {
                 break;
-            } else {
-                bytes.extend_from_slice(&buff[0..n]);
-
-                if n < BUFF_LEN {
-                    break;
-                }
             }
+
+            bytes.extend_from_slice(&buff[0..n]);
         }
 
         // ================================================
@@ -302,13 +310,19 @@ impl Packet {
         }
 
         let packet_id = PacketId::from(bytes[0]);
-        // log::debug!("packet_id = {}", packet_id);
+        log::debug!("packet_id = {}", packet_id);
 
-        let payload_size = u32::from_be_bytes(bytes[1..5].try_into().expect("Incorrect length")) as usize;
-        // log::debug!("payload_size = {}", payload_size);
+        let payload_size = u32::from_be_bytes(
+            bytes[1..5].try_into().expect("Incorrect length"),
+        ) as usize;
+        log::debug!("payload_size = {}", payload_size);
 
         if bytes.len() != SIZE_HEADER + payload_size {
-            return Err(ParseError::mismatched_packet_size(packet_id, bytes.len(), payload_size));
+            return Err(ParseError::mismatched_packet_size(
+                packet_id,
+                bytes.len(),
+                payload_size,
+            ));
         }
 
         // ================================================
@@ -325,19 +339,29 @@ impl Packet {
 
         match packet_id {
             PacketId::Heartbeat => {}
-            PacketId::HeartbeatAck => match String::from_utf8(payload) {
-                Ok(node_id) => packet.node_id = Some(node_id),
-                Err(err) => {
-                    log::error!("Parsing HEARTBEAT_ACK: Cannot parse node_id: {err}");
+            PacketId::HeartbeatAck => {
+                match String::from_utf8(payload) {
+                    Ok(node_id) => packet.node_id = Some(node_id),
+                    Err(err) => {
+                        log::error!("Parsing HEARTBEAT_ACK: Cannot parse node_id: {err}");
+                    }
                 }
-            },
+            }
 
             PacketId::RequestSendReplica => {
                 // Parse addr of deliver node from payload
-                let ip_node_deliver = Ipv4Addr::new(payload[0], payload[1], payload[2], payload[3]);
-                let port_node_deliver =
-                    u16::from_be_bytes(payload[4..6].try_into().expect("Cannot cast last 2 bytes to array"));
-                packet.addr_deliver = Some(SocketAddr::V4(SocketAddrV4::new(ip_node_deliver, port_node_deliver)));
+                let ip_node_deliver = Ipv4Addr::new(
+                    payload[0], payload[1], payload[2], payload[3],
+                );
+                let port_node_deliver = u16::from_be_bytes(
+                    payload[4..6]
+                        .try_into()
+                        .expect("Cannot cast last 2 bytes to array"),
+                );
+                packet.addr_deliver = Some(SocketAddr::V4(SocketAddrV4::new(
+                    ip_node_deliver,
+                    port_node_deliver,
+                )));
 
                 // Parse 'filename'
                 match String::from_utf8(payload[6..].to_vec()) {
@@ -382,14 +406,19 @@ impl Packet {
                 }
 
                 // Parse field 'filename' and 'binary'
-                packet.filename = match String::from_utf8(payload[0..last_idx_sep_tok.unwrap()].to_vec()) {
+                packet.filename = match String::from_utf8(
+                    payload[0..last_idx_sep_tok.unwrap()].to_vec(),
+                ) {
                     Ok(filename) => Some(filename),
                     Err(err) => {
                         log::error!("Reading ClientUpload: Got error as parsing filename: {}", err);
                         None
                     }
                 };
-                packet.binary = Some(payload[last_idx_sep_tok.unwrap() + 2..payload_size].to_vec());
+                packet.binary = Some(
+                    payload[last_idx_sep_tok.unwrap() + 2..payload_size]
+                        .to_vec(),
+                );
             }
 
             PacketId::SendReplicaAck => {
@@ -405,16 +434,21 @@ impl Packet {
             PacketId::AskIp => match payload_size {
                 2 => {
                     // Parse port of thread:Receiver of sender
-                    packet.addr_sender.as_mut().unwrap().set_port(u16::from_be_bytes(
-                        payload
-                            .as_slice()
-                            .try_into()
-                            .expect("Cannot parse 2 bytes in payload to port value"),
-                    ));
+                    packet.addr_sender.as_mut().unwrap().set_port(
+                        u16::from_be_bytes(
+                            payload.as_slice().try_into().expect(
+                                "Cannot parse 2 bytes in payload to port value",
+                            ),
+                        ),
+                    );
                 }
                 _ => {
                     log::info!("Packet AskIP requires specifying port of thread:Receiver of sender");
-                    return Err(ParseError::mismatched_packet_size(packet_id, bytes.len(), payload_size));
+                    return Err(ParseError::mismatched_packet_size(
+                        packet_id,
+                        bytes.len(),
+                        payload_size,
+                    ));
                 }
             },
 
@@ -425,19 +459,31 @@ impl Packet {
                 6 => {
                     let mut buff = Vec::with_capacity(payload_size);
                     if let Err(err) = stream.read_exact(&mut buff) {
-                        log::error!("Err as reading bytes for payload: {}", err);
+                        log::error!(
+                            "Err as reading bytes for payload: {}",
+                            err
+                        );
                         return Err(ParseError::stream_reading_err());
                     }
                     packet.payload = Some(buff);
 
                     // Parse addr's Master from payload
-                    let ip_master = Ipv4Addr::new(payload[0], payload[1], payload[2], payload[3]);
-                    let port_master =
-                        u16::from_be_bytes(payload[4..6].try_into().expect("Cannot cast last 2 bytes to array"));
-                    packet.addr_master = Some(SocketAddr::V4(SocketAddrV4::new(ip_master, port_master)));
+                    let ip_master = Ipv4Addr::new(
+                        payload[0], payload[1], payload[2], payload[3],
+                    );
+                    let port_master = u16::from_be_bytes(
+                        payload[4..6]
+                            .try_into()
+                            .expect("Cannot cast last 2 bytes to array"),
+                    );
+                    packet.addr_master = Some(SocketAddr::V4(
+                        SocketAddrV4::new(ip_master, port_master),
+                    ));
                 }
                 _ => {
-                    return Err(ParseError::incorrect_payload_size_ask_ip_ack(payload.len()));
+                    return Err(ParseError::incorrect_payload_size_ask_ip_ack(
+                        payload.len(),
+                    ));
                 }
             },
 
@@ -458,11 +504,11 @@ impl Packet {
                 }
 
                 // Parse 'port'
-                packet.addr_sender.as_mut().unwrap().set_port(u16::from_be_bytes(
-                    payload[1..3]
-                        .try_into()
-                        .expect("Cannot parse 2 bytes in payload to port value"),
-                ));
+                packet.addr_sender.as_mut().unwrap().set_port(
+                    u16::from_be_bytes(payload[1..3].try_into().expect(
+                        "Cannot parse 2 bytes in payload to port value",
+                    )),
+                );
 
                 // Parse 'filename'
                 match String::from_utf8(payload[3..payload_size - 1].to_vec()) {
@@ -487,26 +533,42 @@ impl Packet {
                 6 => {
                     let mut buff = Vec::with_capacity(payload_size);
                     if let Err(err) = stream.read_exact(&mut buff) {
-                        log::error!("Err as reading bytes for payload: {}", err);
+                        log::error!(
+                            "Err as reading bytes for payload: {}",
+                            err
+                        );
                         return Err(ParseError::stream_reading_err());
                     }
                     packet.payload = Some(buff);
 
                     // Parse Data node's address from payload
-                    let ip = Ipv4Addr::new(payload[0], payload[1], payload[2], payload[3]);
-                    let port = u16::from_be_bytes(payload[4..6].try_into().expect("Cannot cast last 2 bytes to array"));
-                    packet.addr_data = Some(SocketAddr::V4(SocketAddrV4::new(ip, port)));
+                    let ip = Ipv4Addr::new(
+                        payload[0], payload[1], payload[2], payload[3],
+                    );
+                    let port = u16::from_be_bytes(
+                        payload[4..6]
+                            .try_into()
+                            .expect("Cannot cast last 2 bytes to array"),
+                    );
+                    packet.addr_data =
+                        Some(SocketAddr::V4(SocketAddrV4::new(ip, port)));
                 }
                 _ => {
-                    return Err(ParseError::incorrect_payload_size_ask_ip_ack(payload.len()));
+                    return Err(ParseError::incorrect_payload_size_ask_ip_ack(
+                        payload.len(),
+                    ));
                 }
             },
 
             PacketId::ClientUpload => {
                 // Parse port info from payload
-                packet.addr_sender.as_mut().unwrap().set_port(u16::from_be_bytes(
-                    payload[0..2].try_into().expect("Cannot cast last 2 bytes to array"),
-                ));
+                packet.addr_sender.as_mut().unwrap().set_port(
+                    u16::from_be_bytes(
+                        payload[0..2]
+                            .try_into()
+                            .expect("Cannot cast last 2 bytes to array"),
+                    ),
+                );
 
                 // Loop over payload to find position of 2 consecutive character '|'
                 let mut last_idx_sep_tok: Option<usize> = None;
@@ -534,14 +596,19 @@ impl Packet {
                 }
 
                 // Parse field 'filename' and 'binary'
-                packet.filename = match String::from_utf8(payload[2..last_idx_sep_tok.unwrap()].to_vec()) {
+                packet.filename = match String::from_utf8(
+                    payload[2..last_idx_sep_tok.unwrap()].to_vec(),
+                ) {
                     Ok(filename) => Some(filename),
                     Err(err) => {
                         log::error!("Reading ClientUpload: Got error as parsing filename: {}", err);
                         None
                     }
                 };
-                packet.binary = Some(payload[last_idx_sep_tok.unwrap() + 2..payload_size].to_vec());
+                packet.binary = Some(
+                    payload[last_idx_sep_tok.unwrap() + 2..payload_size]
+                        .to_vec(),
+                );
             }
 
             PacketId::DataNodeSendData => {
@@ -564,14 +631,15 @@ impl Packet {
                 }
 
                 // Parse 'port'
-                packet.addr_sender.as_mut().unwrap().set_port(u16::from_be_bytes(
-                    payload[1..3]
-                        .try_into()
-                        .expect("Cannot parse 2 bytes in payload to port value"),
-                ));
+                packet.addr_sender.as_mut().unwrap().set_port(
+                    u16::from_be_bytes(payload[1..3].try_into().expect(
+                        "Cannot parse 2 bytes in payload to port value",
+                    )),
+                );
 
                 // Parse 'filename'
-                packet.filename = match String::from_utf8(payload[3..].to_vec()) {
+                packet.filename = match String::from_utf8(payload[3..].to_vec())
+                {
                     Ok(filename) => Some(filename),
                     Err(err) => {
                         log::error!("Reading ClientUpload: Got error as parsing filename: {}", err);
@@ -591,12 +659,20 @@ impl Packet {
                     packet.role = Some(Role::from(payload[0]));
 
                     // Parse port info from payload
-                    packet.addr_sender.as_mut().unwrap().set_port(u16::from_be_bytes(
-                        payload[1..3].try_into().expect("Cannot cast last 2 bytes to array"),
-                    ));
+                    packet.addr_sender.as_mut().unwrap().set_port(
+                        u16::from_be_bytes(
+                            payload[1..3]
+                                .try_into()
+                                .expect("Cannot cast last 2 bytes to array"),
+                        ),
+                    );
                 }
                 _ => {
-                    return Err(ParseError::mismatched_packet_size(packet_id, bytes.len(), payload_size));
+                    return Err(ParseError::mismatched_packet_size(
+                        packet_id,
+                        bytes.len(),
+                        payload_size,
+                    ));
                 }
             },
 
@@ -618,11 +694,16 @@ impl Packet {
         }
     }
 
-    pub fn create_heartbeat_ack(addr_rcv: SocketAddr, addr_current: SocketAddr) -> Packet {
+    pub fn create_heartbeat_ack(
+        addr_rcv: SocketAddr,
+        addr_current: SocketAddr,
+    ) -> Packet {
         let mut payload = Vec::<u8>::new();
         match addr_current {
             SocketAddr::V4(addr) => {
-                payload.extend_from_slice(conv_addr2id(addr.ip(), addr.port()).as_bytes());
+                payload.extend_from_slice(
+                    conv_addr2id(addr.ip(), addr.port()).as_bytes(),
+                );
             }
             _ => {
                 log::error!("Creating HEARTBEAT_ACK, but IP of current node isn't IPv4 format.");
@@ -637,7 +718,11 @@ impl Packet {
         }
     }
 
-    pub fn create_request_send_replica(addr_rcv: SocketAddr, addr_deliver: SocketAddr, filename: String) -> Packet {
+    pub fn create_request_send_replica(
+        addr_rcv: SocketAddr,
+        addr_deliver: SocketAddr,
+        filename: String,
+    ) -> Packet {
         let mut packet = Packet {
             packet_id: PacketId::RequestSendReplica,
             addr_rcv: Some(addr_rcv),
@@ -659,7 +744,11 @@ impl Packet {
         packet
     }
 
-    pub fn create_send_replica(addr_rcv: SocketAddr, filename: String, binary: Vec<u8>) -> Packet {
+    pub fn create_send_replica(
+        addr_rcv: SocketAddr,
+        filename: String,
+        binary: Vec<u8>,
+    ) -> Packet {
         let mut packet = Packet {
             packet_id: PacketId::SendReplica,
             addr_rcv: Some(addr_rcv),
@@ -683,7 +772,10 @@ impl Packet {
         packet
     }
 
-    pub fn create_send_replica_ack(addr_rcv: SocketAddr, filename: String) -> Packet {
+    pub fn create_send_replica_ack(
+        addr_rcv: SocketAddr,
+        filename: String,
+    ) -> Packet {
         let mut packet = Packet {
             packet_id: PacketId::SendReplicaAck,
             addr_rcv: Some(addr_rcv),
@@ -713,7 +805,10 @@ impl Packet {
         }
     }
 
-    pub fn create_ask_ip_ack(addr_rcv: SocketAddr, addr_master: Option<&SocketAddr>) -> Packet {
+    pub fn create_ask_ip_ack(
+        addr_rcv: SocketAddr,
+        addr_master: Option<&SocketAddr>,
+    ) -> Packet {
         let mut packet = Packet {
             packet_id: PacketId::AskIpAck,
             addr_rcv: Some(addr_rcv),
@@ -723,7 +818,8 @@ impl Packet {
             Some(addr_master) => {
                 if let IpAddr::V4(ip_master) = addr_master.ip() {
                     let mut payload = ip_master.octets().to_vec();
-                    payload.extend_from_slice(&addr_master.port().to_be_bytes());
+                    payload
+                        .extend_from_slice(&addr_master.port().to_be_bytes());
                     packet.payload = Some(payload);
                 }
             }
@@ -733,7 +829,12 @@ impl Packet {
         packet
     }
 
-    pub fn create_request_from_client(action: Action, port: u16, filename: &String, addr_rcv: SocketAddr) -> Packet {
+    pub fn create_request_from_client(
+        action: Action,
+        port: u16,
+        filename: &String,
+        addr_rcv: SocketAddr,
+    ) -> Packet {
         let mut packet = Packet {
             packet_id: PacketId::RequestFromClient,
             addr_rcv: Some(addr_rcv),
@@ -753,7 +854,10 @@ impl Packet {
         packet
     }
 
-    pub fn create_response_node_ip(addr_rcv: SocketAddr, addr_node: SocketAddr) -> Packet {
+    pub fn create_response_node_ip(
+        addr_rcv: SocketAddr,
+        addr_node: SocketAddr,
+    ) -> Packet {
         let mut packet = Packet {
             packet_id: PacketId::ResponseNodeIp,
             addr_rcv: Some(addr_rcv),
@@ -771,7 +875,12 @@ impl Packet {
         packet
     }
 
-    pub fn create_client_upload(port: u16, addr_rcv: SocketAddr, filename: &String, binary: Vec<u8>) -> Packet {
+    pub fn create_client_upload(
+        port: u16,
+        addr_rcv: SocketAddr,
+        filename: &String,
+        binary: Vec<u8>,
+    ) -> Packet {
         let mut packet = Packet {
             packet_id: PacketId::ClientUpload,
             addr_rcv: Some(addr_rcv),
@@ -797,7 +906,12 @@ impl Packet {
     // pub fn create_DataNodeSendData() -> Packet {
     //     // TODO: HoangLe [Apr-28]: Implement this
     // }
-    pub fn create_client_request_ack(action: Action, port: u16, filename: &String, addr_master: SocketAddr) -> Packet {
+    pub fn create_client_request_ack(
+        action: Action,
+        port: u16,
+        filename: &String,
+        addr_master: SocketAddr,
+    ) -> Packet {
         let mut packet = Packet {
             packet_id: PacketId::ClientRequestAck,
             addr_rcv: Some(addr_master),
@@ -820,10 +934,16 @@ impl Packet {
     //     // TODO: HoangLe [Apr-28]: Implement this
     // }
 
-    pub fn create_notify(addr_rcv: SocketAddr, role: &Role, addr_current: SocketAddr) -> Packet {
+    pub fn create_notify(
+        addr_rcv: SocketAddr,
+        role: &Role,
+        addr_current: SocketAddr,
+    ) -> Packet {
         // Craft payload
         let mut payload = Vec::<u8>::new();
-        payload.push(u8::try_from(role).expect("Cannot parse 'role' to u8 value."));
+        payload.push(
+            u8::try_from(role).expect("Cannot parse 'role' to u8 value."),
+        );
 
         let port = addr_current.port();
         payload.extend_from_slice(&port.to_be_bytes());
@@ -846,10 +966,13 @@ impl Packet {
 }
 
 pub fn forward_packet(sndr_p2s: &Sender<Packet>, packet: Packet) {
-    // log::debug!("packet size: {}", packet.to_bytes().len());
+    log::debug!("packet size: {}", packet.to_bytes().len());
 
     if let Err(err) = sndr_p2s.send(packet) {
-        log::error!("Err as sending from thread:Processor -> thread:Sender: {}", err);
+        log::error!(
+            "Err as sending from thread:Processor -> thread:Sender: {}",
+            err
+        );
     };
 }
 

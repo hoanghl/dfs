@@ -30,14 +30,16 @@ pub trait Node {
         // ================================================
         let flag_stop = Arc::new(AtomicBool::new(false));
 
-        let thread_rcvr = match self.create_thread_receiver(port, sndr_r2p, &flag_stop) {
-            Ok(handle) => handle,
-            Err(err) => {
-                log::error!("{}", err);
-                return;
-            }
-        };
-        let thread_sndr = match self.create_thread_sender(rcvr_p2s, &flag_stop) {
+        let thread_rcvr =
+            match self.create_thread_receiver(port, sndr_r2p, &flag_stop) {
+                Ok(handle) => handle,
+                Err(err) => {
+                    log::error!("{}", err);
+                    return;
+                }
+            };
+        let thread_sndr = match self.create_thread_sender(rcvr_p2s, &flag_stop)
+        {
             Ok(handle) => handle,
             Err(err) => {
                 log::error!("{}", err);
@@ -155,20 +157,31 @@ pub trait Node {
 
                 let a = packet.to_bytes();
                 if let Err(err) = stream.write_all(a.as_slice()) {
-                    log::error!("Cannot send to address: {} : {}", &addr_rcv, err);
+                    log::error!(
+                        "Cannot send to address: {} : {}",
+                        &addr_rcv,
+                        err
+                    );
                 }
             }
         }))
     }
 
     /// Gracefully shutdown thread:Receiver and thread:Sender
-    fn trigger_graceful_shutdown(&self, flag_stop: &Arc<AtomicBool>, port: u16, sndr_p2s: &Sender<Packet>) {
+    fn trigger_graceful_shutdown(
+        &self,
+        flag_stop: &Arc<AtomicBool>,
+        port: u16,
+        sndr_p2s: &Sender<Packet>,
+    ) {
         log::debug!("trigger_graceful_shutdown invoked!");
 
         flag_stop.store(true, Ordering::Relaxed);
 
         // Shutdown thread:Receiver
-        if let Err(err) = TcpStream::connect(SocketAddr::from(([127, 0, 0, 1], port))) {
+        if let Err(err) =
+            TcpStream::connect(SocketAddr::from(([127, 0, 0, 1], port)))
+        {
             log::error!("Error as executing gracefull shutdown: {}", err);
         };
 
