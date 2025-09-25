@@ -310,12 +310,12 @@ impl Packet {
         }
 
         let packet_id = PacketId::from(bytes[0]);
-        log::debug!("packet_id = {}", packet_id);
+        // log::debug!("packet_id = {}", packet_id);
 
         let payload_size = u32::from_be_bytes(
             bytes[1..5].try_into().expect("Incorrect length"),
         ) as usize;
-        log::debug!("payload_size = {}", payload_size);
+        // log::debug!("payload_size = {}", payload_size);
 
         if bytes.len() != SIZE_HEADER + payload_size {
             return Err(ParseError::mismatched_packet_size(

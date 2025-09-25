@@ -21,7 +21,7 @@ fn main() {
     }
     env_logger::init();
 
-    let ip_dns = Ipv4Addr::new(192, 168, 0, 133);
+    let ip_dns = Ipv4Addr::new(172, 20, 13, 0);
     let port_dns: u16 = 7889;
 
     let args = Args::initialize();
