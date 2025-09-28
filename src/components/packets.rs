@@ -294,7 +294,18 @@ impl Packet {
         let mut bytes = Vec::<u8>::new();
         let mut buff: [u8; BUFF_LEN] = [0; BUFF_LEN];
         loop {
-            let n = stream.read(&mut buff).unwrap();
+            let n = match stream.read(&mut buff) {
+                Ok(n) => n,
+                Err(err) => {
+                    log::error!(
+                        "Error as reading from stream of {:?}: {}",
+                        stream.peer_addr(),
+                        err
+                    );
+
+                    return Err(ParseError::stream_reading_err());
+                }
+            };
             if n == 0 {
                 break;
             }
@@ -966,7 +977,7 @@ impl Packet {
 }
 
 pub fn forward_packet(sndr_p2s: &Sender<Packet>, packet: Packet) {
-    log::debug!("packet size: {}", packet.to_bytes().len());
+    // log::debug!("packet size: {}", packet.to_bytes().len());
 
     if let Err(err) = sndr_p2s.send(packet) {
         log::error!(

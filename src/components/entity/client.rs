@@ -33,15 +33,6 @@ impl<'conf> Client<'conf> {
         rcvr_r2p: &Receiver<Packet>,
         sndr_p2s: &Sender<Packet>,
     ) {
-        let addr_dns: SocketAddr = SocketAddr::new(
-            IpAddr::V4(self.configs.ip_dns),
-            self.configs.port_dns,
-        );
-        let addr_current = SocketAddr::V4(SocketAddrV4::new(
-            Ipv4Addr::new(127, 0, 0, 1),
-            self.configs.port,
-        ));
-
         let mut packet: Packet;
 
         // 1. Read file
@@ -71,11 +62,14 @@ impl<'conf> Client<'conf> {
         log::debug!("binary size: {}", binary.len());
 
         // 2. Ask DNS for Master's address
-        log::debug!("Ask Master address from DNS: {}", addr_dns);
+        log::debug!("Ask Master address from DNS: {}", self.configs.addr_dns);
 
         forward_packet(
             sndr_p2s,
-            Packet::create_ask_ip(addr_dns, addr_current.port()),
+            Packet::create_ask_ip(
+                self.configs.addr_dns,
+                self.configs.addr_local.port(),
+            ),
         );
         packet = wait_packet(rcvr_r2p);
         if PacketId::AskIpAck != packet.packet_id {
@@ -100,7 +94,7 @@ impl<'conf> Client<'conf> {
             sndr_p2s,
             Packet::create_request_from_client(
                 Action::Write,
-                self.configs.port,
+                self.configs.addr_local.port(),
                 self.configs.name.as_ref().unwrap(),
                 addr_master,
             ),
@@ -129,7 +123,7 @@ impl<'conf> Client<'conf> {
         forward_packet(
             sndr_p2s,
             Packet::create_client_upload(
-                self.configs.port,
+                self.configs.addr_local.port(),
                 addr_data,
                 self.configs.name.as_ref().unwrap(),
                 binary,

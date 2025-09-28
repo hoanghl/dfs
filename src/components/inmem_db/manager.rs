@@ -1,7 +1,7 @@
 use super::{entries::*, errors::*, types::*, utils::*};
-use crate::{components::entity::node_roles::Role, Configs};
+use crate::components::{configs::Configs, entity::node_roles::Role};
 use rusqlite::{params, Connection, Result};
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::net::{Ipv4Addr, SocketAddr};
 
 const NAME_DB_NODE: &'static str = "node_info";
 const NAME_DB_FILE: &'static str = "file_info";
@@ -67,16 +67,12 @@ impl<'dbmngr> DBManager<'dbmngr> {
                         }
                     };
 
-                let addr_current = SocketAddr::V4(SocketAddrV4::new(
-                    Ipv4Addr::new(127, 0, 0, 1),
-                    self.conf.port,
-                ));
-                match addr_current {
+                match self.conf.addr_local {
                     SocketAddr::V4(addr) => {
                         if let Err(err) = db_node.upsert(
                             &self.conn,
                             addr.ip().clone(),
-                            addr_current.port(),
+                            self.conf.addr_local.port(),
                             Role::Master,
                         ) {
                             log::error!("Error as UPSERT: {}", err);
@@ -89,7 +85,7 @@ impl<'dbmngr> DBManager<'dbmngr> {
                     _ => {
                         log::error!(
                         "Error as inserting socket address of itself to in-memory DB: socket address not in IpV4: {}",
-                        addr_current
+                        self.conf.addr_local
                     );
                         return Err(DBManagerCreationError {
                             error_code: DBManagerCreationErrorCode::Default,

@@ -1,4 +1,7 @@
-use std::net::Ipv4Addr;
+use std::{
+    net::Ipv4Addr,
+    net::{IpAddr, SocketAddr},
+};
 
 use clap::Parser;
 
@@ -9,10 +12,8 @@ use crate::components::{entity::node_roles::Role, packets::Action};
 
 pub struct Configs {
     // Network-related params
-    pub ip_dns: Ipv4Addr,
-    pub port_dns: u16,
-
-    pub port: u16,
+    pub addr_dns: SocketAddr,
+    pub addr_local: SocketAddr,
 
     // Operation-related params
     pub role: Role,
@@ -27,21 +28,19 @@ pub struct Configs {
 }
 
 impl Configs {
-    pub fn initialize(ip_dns: Ipv4Addr, port_dns: u16) -> Configs {
-        Configs {
-            ip_dns,
-            port_dns,
-            ..Default::default()
-        }
-    }
-}
+    pub fn initialize(ip_dns: Ipv4Addr, port_dns: u16, port: u16) -> Configs {
+        let ip_local = match local_ip_address::local_ip() {
+            Ok(ip) => ip,
+            Err(err) => {
+                panic!("Err as getting local IP: {}", err);
+            }
+        };
+        let addr_local = SocketAddr::new(ip_local, port);
+        let addr_dns = SocketAddr::new(IpAddr::V4(ip_dns), port_dns);
 
-impl Default for Configs {
-    fn default() -> Self {
         Configs {
-            ip_dns: Ipv4Addr::new(0, 0, 0, 0),
-            port_dns: 0,
-            port: 7888,
+            addr_dns,
+            addr_local: addr_local,
             role: Role::Data,
             dir_data: "./data".to_string(),
             interval_heartbeat: 20,

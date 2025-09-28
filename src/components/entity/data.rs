@@ -24,15 +24,7 @@ impl<'conf> Node for Data<'conf> {
         rcvr_r2p: &Receiver<Packet>,
         sndr_p2s: &Sender<Packet>,
     ) -> Result<(), NodeCreationError> {
-        let addr_dns: SocketAddr = SocketAddr::new(
-            IpAddr::V4(self.configs.ip_dns),
-            self.configs.port_dns,
-        );
         let mut addr_master: Option<SocketAddr> = None;
-        let addr_current = SocketAddr::V4(SocketAddrV4::new(
-            Ipv4Addr::new(127, 0, 0, 1),
-            self.configs.port,
-        ));
 
         // For data management
         let file_utils = match FileUtils::new(&self.configs) {
@@ -65,9 +57,10 @@ impl<'conf> Node for Data<'conf> {
         // ================================================
 
         // Ask Master IP from DNS and notify to current master
-        if let Err(err) =
-            sndr_p2s.send(Packet::create_ask_ip(addr_dns, self.configs.port))
-        {
+        if let Err(err) = sndr_p2s.send(Packet::create_ask_ip(
+            self.configs.addr_dns,
+            self.configs.addr_local.port(),
+        )) {
             log::error!("Error as sending AskIP: {}", err);
             return Err(NodeCreationError {
                 error_code: NodeCreationErrorCode::ProcessorThreadErr,
@@ -91,7 +84,7 @@ impl<'conf> Node for Data<'conf> {
                         sndr_p2s,
                         Packet::create_heartbeat_ack(
                             addr_master.clone().unwrap(),
-                            addr_current.clone(),
+                            self.configs.addr_local.clone(),
                         ),
                     );
                 }
@@ -110,7 +103,7 @@ impl<'conf> Node for Data<'conf> {
                             Packet::create_notify(
                                 addr,
                                 &Role::Data,
-                                addr_current.clone(),
+                                self.configs.addr_local.clone(),
                             ),
                         );
                     }
@@ -131,30 +124,31 @@ impl<'conf> Node for Data<'conf> {
                     };
 
                     // Insert data
-                    let ip = match addr_current.ip() {
+                    let ip = match self.configs.addr_local.ip() {
                         IpAddr::V4(ip) => ip,
                         _ => {
                             log::error!(
-                                "Cannot parse addr_current to IpV4 format: {}",
-                                { addr_current }
+                                "Cannot parse self.configs.addr_local to IpV4 format: {}",
+                                { self.configs.addr_local }
                             );
                             continue;
                         }
                     };
 
-                    if let Err(err) =
-                        db_manager.upsert_file(FileInfoEntry::initialize(
-                            &filename,
-                            true,
-                            String::from(conv_addr2id(
-                                &ip,
-                                addr_current.port(),
-                            )),
-                        ))
-                    {
-                        log::error!("Error as upsert: {}", err);
-                        exit(1);
-                    }
+                    // FIXME: HoangLe [Sep-28]: Enable this
+                    // if let Err(err) =
+                    //     db_manager.upsert_file(FileInfoEntry::initialize(
+                    //         &filename,
+                    //         true,
+                    //         String::from(conv_addr2id(
+                    //             &ip,
+                    //             self.configs.addr_local.port(),
+                    //         )),
+                    //     ))
+                    // {
+                    //     log::error!("Error as upsert: {}", err);
+                    //     exit(1);
+                    // }
 
                     // Send ACK to client
                     forward_packet(
@@ -169,7 +163,7 @@ impl<'conf> Node for Data<'conf> {
                         sndr_p2s,
                         Packet::create_client_request_ack(
                             Action::Write,
-                            addr_current.port(),
+                            self.configs.addr_local.port(),
                             &filename,
                             addr_master.unwrap().clone(),
                         ),
@@ -219,29 +213,30 @@ impl<'conf> Node for Data<'conf> {
                     };
 
                     // Insert data
-                    let ip = match addr_current.ip() {
+                    let ip = match self.configs.addr_local.ip() {
                         IpAddr::V4(ip) => ip,
                         _ => {
                             log::error!(
-                                "Cannot parse addr_current to IpV4 format: {}",
-                                { addr_current }
+                                "Cannot parse self.configs.addr_local to IpV4 format: {}",
+                                { self.configs.addr_local }
                             );
                             continue;
                         }
                     };
-                    if let Err(err) =
-                        db_manager.upsert_file(FileInfoEntry::initialize(
-                            &filename,
-                            true,
-                            String::from(conv_addr2id(
-                                &ip,
-                                addr_current.port(),
-                            )),
-                        ))
-                    {
-                        log::error!("Error as upsert: {}", err);
-                        exit(1);
-                    }
+                    // FIXME: HoangLe [Sep-28]: Enable this
+                    // if let Err(err) =
+                    //     db_manager.upsert_file(FileInfoEntry::initialize(
+                    //         &filename,
+                    //         true,
+                    //         String::from(conv_addr2id(
+                    //             &ip,
+                    //             self.configs.addr_local.port(),
+                    //         )),
+                    //     ))
+                    // {
+                    //     log::error!("Error as upsert: {}", err);
+                    //     exit(1);
+                    // }
 
                     log::debug!("Replication process: done step 3.2");
 
@@ -264,25 +259,26 @@ impl<'conf> Node for Data<'conf> {
                         IpAddr::V4(ip) => ip,
                         _ => {
                             log::error!(
-                                "Cannot parse addr_current to IpV4 format: {}",
-                                { addr_current }
+                                "Cannot parse self.configs.addr_local to IpV4 format: {}",
+                                { self.configs.addr_local }
                             );
                             continue;
                         }
                     };
-                    if let Err(err) =
-                        db_manager.upsert_file(FileInfoEntry::initialize(
-                            &filename,
-                            true,
-                            String::from(conv_addr2id(
-                                &ip,
-                                addr_current.port(),
-                            )),
-                        ))
-                    {
-                        log::error!("Error as upsert: {}", err);
-                        exit(1);
-                    }
+                    // FIXME: HoangLe [Sep-28]: Enable this
+                    // if let Err(err) =
+                    //     db_manager.upsert_file(FileInfoEntry::initialize(
+                    //         &filename,
+                    //         true,
+                    //         String::from(conv_addr2id(
+                    //             &ip,
+                    //             self.configs.addr_local.port(),
+                    //         )),
+                    //     ))
+                    // {
+                    //     log::error!("Error as upsert: {}", err);
+                    //     exit(1);
+                    // }
 
                     log::debug!("Replication process: done step 5");
                 }

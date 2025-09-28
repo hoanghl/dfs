@@ -25,15 +25,6 @@ impl<'a> Node for Master<'a> {
         rcvr_r2p: &Receiver<Packet>,
         sndr_p2s: &Sender<Packet>,
     ) -> Result<(), NodeCreationError> {
-        let addr_dns: SocketAddr = SocketAddr::new(
-            IpAddr::V4(self.configs.ip_dns),
-            self.configs.port_dns,
-        );
-        let addr_current = SocketAddr::V4(SocketAddrV4::new(
-            Ipv4Addr::new(127, 0, 0, 1),
-            self.configs.port,
-        ));
-
         // For data management
         let file_utils = match FileUtils::new(&self.configs) {
             Ok(file_utils) => file_utils,
@@ -71,9 +62,9 @@ impl<'a> Node for Master<'a> {
 
         // Send its IP to DNS
         if let Err(err) = sndr_p2s.send(Packet::create_notify(
-            addr_dns.clone(),
+            self.configs.addr_dns.clone(),
             &Role::Master,
-            addr_current.clone(),
+            self.configs.addr_local.clone(),
         )) {
             log::error!("Error as sending Notify: {}", err);
             return Err(NodeCreationError {
@@ -199,10 +190,10 @@ impl<'a> Node for Master<'a> {
                             };
 
                             // Insert data
-                            let ip = match addr_current.ip() {
+                            let ip = match self.configs.addr_local.ip() {
                                 IpAddr::V4(ip) => ip,
                                 _ => {
-                                    log::error!("Cannot parse addr_current to IpV4 format: {}", { addr_current });
+                                    log::error!("Cannot parse self.configs.addr_local to IpV4 format: {}", { self.configs.addr_local });
                                     continue;
                                 }
                             };
@@ -213,7 +204,7 @@ impl<'a> Node for Master<'a> {
                                     true,
                                     String::from(conv_addr2id(
                                         &ip,
-                                        addr_current.port(),
+                                        self.configs.addr_local.port(),
                                     )),
                                 ),
                             ) {
@@ -234,9 +225,9 @@ impl<'a> Node for Master<'a> {
                                 sndr_p2s,
                                 Packet::create_client_request_ack(
                                     Action::Write,
-                                    addr_current.port(),
+                                    self.configs.addr_local.port(),
                                     &filename,
-                                    addr_current,
+                                    self.configs.addr_local,
                                 ),
                             );
                         }
@@ -363,10 +354,10 @@ impl<'a> Node for Master<'a> {
                             };
 
                             // Insert data
-                            let ip = match addr_current.ip() {
+                            let ip = match self.configs.addr_local.ip() {
                                 IpAddr::V4(ip) => ip,
                                 _ => {
-                                    log::error!("Cannot parse addr_current to IpV4 format: {}", { addr_current });
+                                    log::error!("Cannot parse self.configs.addr_local to IpV4 format: {}", { self.configs.addr_local });
                                     continue;
                                 }
                             };
@@ -376,7 +367,7 @@ impl<'a> Node for Master<'a> {
                                     true,
                                     String::from(conv_addr2id(
                                         &ip,
-                                        addr_current.port(),
+                                        self.configs.addr_local.port(),
                                     )),
                                 ),
                             ) {
@@ -390,7 +381,7 @@ impl<'a> Node for Master<'a> {
                             forward_packet(
                                 sndr_p2s,
                                 Packet::create_send_replica_ack(
-                                    addr_current.clone(),
+                                    self.configs.addr_local.clone(),
                                     filename,
                                 ),
                             );
@@ -404,7 +395,7 @@ impl<'a> Node for Master<'a> {
                             let ip = match packet.addr_sender.unwrap().ip() {
                                 IpAddr::V4(ip) => ip,
                                 _ => {
-                                    log::error!("Cannot parse addr_current to IpV4 format: {}", { addr_current });
+                                    log::error!("Cannot parse self.configs.addr_local to IpV4 format: {}", { self.configs.addr_local });
                                     continue;
                                 }
                             };
@@ -414,7 +405,7 @@ impl<'a> Node for Master<'a> {
                                     true,
                                     String::from(conv_addr2id(
                                         &ip,
-                                        addr_current.port(),
+                                        self.configs.addr_local.port(),
                                     )),
                                 ),
                             ) {
