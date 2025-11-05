@@ -66,6 +66,9 @@ pub enum PacketId {
     StateSyncAck            = 14,
     Notify                  = 15,
     ClientUploadAck         = 16,
+    GracefulShutdown        = 17,
+    StatusService           = 18,
+    StatusServiceAck        = 19,
 }
 
 pub struct Packet {
@@ -130,6 +133,9 @@ impl From<u8> for PacketId {
             14 => PacketId::StateSyncAck,
             15 => PacketId::Notify,
             16 => PacketId::ClientUploadAck,
+            17 => PacketId::GracefulShutdown,
+            18 => PacketId::StatusService,
+            19 => PacketId::StatusServiceAck,
             _ => panic!("Error as parsing to enum PacketId: value = {}", value),
         }
     }
@@ -155,6 +161,9 @@ impl From<PacketId> for u8 {
             PacketId::StateSyncAck => 14,
             PacketId::Notify => 15,
             PacketId::ClientUploadAck => 16,
+            PacketId::GracefulShutdown => 17,
+            PacketId::StatusService => 18,
+            PacketId::StatusServiceAck => 19,
         }
     }
 }
@@ -179,6 +188,9 @@ impl std::fmt::Display for PacketId {
             PacketId::StateSyncAck => "StateSyncAck",
             PacketId::Notify => "Notify",
             PacketId::ClientUploadAck => "ClientUploadAck",
+            PacketId::GracefulShutdown => "GracefulShutdown",
+            PacketId::StatusService => "StatusService",
+            PacketId::StatusServiceAck => "StatusServiceAck",
         };
         write!(f, "{}", s)
     }
@@ -186,26 +198,7 @@ impl std::fmt::Display for PacketId {
 
 impl std::fmt::Debug for PacketId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            PacketId::Default => "Default",
-            PacketId::Heartbeat => "Heartbeat",
-            PacketId::HeartbeatAck => "HeartbeatAck",
-            PacketId::RequestSendReplica => "RequestSendReplica",
-            PacketId::SendReplica => "SendReplica",
-            PacketId::SendReplicaAck => "SendReplicaAck",
-            PacketId::AskIp => "AskIp",
-            PacketId::AskIpAck => "AskIpAck",
-            PacketId::RequestFromClient => "RequestFromClient",
-            PacketId::ResponseNodeIp => "ResponseNodeIp",
-            PacketId::ClientUpload => "ClientUpload",
-            PacketId::DataNodeSendData => "DataNodeSendData",
-            PacketId::ClientRequestAck => "ClientRequestAck",
-            PacketId::StateSync => "StateSync",
-            PacketId::StateSyncAck => "StateSyncAck",
-            PacketId::Notify => "Notify",
-            PacketId::ClientUploadAck => "ClientUploadAck",
-        };
-        write!(f, "{}", s)
+        write!(f, "{}", self)
     }
 }
 
@@ -688,6 +681,8 @@ impl Packet {
             },
 
             PacketId::ClientUploadAck => {}
+
+            PacketId::GracefulShutdown => {}
 
             _ => return Err(ParseError::incorrect_packet_id(packet_id as u8)),
         }

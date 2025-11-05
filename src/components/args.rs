@@ -1,5 +1,4 @@
 use clap::Parser;
-use std::env;
 
 use crate::components::{entity::node_roles::Role, packets::Action};
 

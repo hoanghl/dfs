@@ -135,20 +135,19 @@ impl<'conf> Node for Data<'conf> {
                         }
                     };
 
-                    // FIXME: HoangLe [Sep-28]: Enable this
-                    // if let Err(err) =
-                    //     db_manager.upsert_file(FileInfoEntry::initialize(
-                    //         &filename,
-                    //         true,
-                    //         String::from(conv_addr2id(
-                    //             &ip,
-                    //             self.configs.addr_local.port(),
-                    //         )),
-                    //     ))
-                    // {
-                    //     log::error!("Error as upsert: {}", err);
-                    //     exit(1);
-                    // }
+                    if let Err(err) =
+                        db_manager.upsert_file(FileInfoEntry::initialize(
+                            &filename,
+                            true,
+                            String::from(conv_addr2id(
+                                &ip,
+                                self.configs.addr_local.port(),
+                            )),
+                        ))
+                    {
+                        log::error!("Error as upsert: {}", err);
+                        exit(1);
+                    }
 
                     // Send ACK to client
                     forward_packet(
@@ -223,20 +222,20 @@ impl<'conf> Node for Data<'conf> {
                             continue;
                         }
                     };
-                    // FIXME: HoangLe [Sep-28]: Enable this
-                    // if let Err(err) =
-                    //     db_manager.upsert_file(FileInfoEntry::initialize(
-                    //         &filename,
-                    //         true,
-                    //         String::from(conv_addr2id(
-                    //             &ip,
-                    //             self.configs.addr_local.port(),
-                    //         )),
-                    //     ))
-                    // {
-                    //     log::error!("Error as upsert: {}", err);
-                    //     exit(1);
-                    // }
+
+                    if let Err(err) =
+                        db_manager.upsert_file(FileInfoEntry::initialize(
+                            &filename,
+                            true,
+                            String::from(conv_addr2id(
+                                &ip,
+                                self.configs.addr_local.port(),
+                            )),
+                        ))
+                    {
+                        log::error!("Error as upsert: {}", err);
+                        exit(1);
+                    }
 
                     log::debug!("Replication process: done step 3.2");
 
@@ -265,23 +264,25 @@ impl<'conf> Node for Data<'conf> {
                             continue;
                         }
                     };
-                    // FIXME: HoangLe [Sep-28]: Enable this
-                    // if let Err(err) =
-                    //     db_manager.upsert_file(FileInfoEntry::initialize(
-                    //         &filename,
-                    //         true,
-                    //         String::from(conv_addr2id(
-                    //             &ip,
-                    //             self.configs.addr_local.port(),
-                    //         )),
-                    //     ))
-                    // {
-                    //     log::error!("Error as upsert: {}", err);
-                    //     exit(1);
-                    // }
+
+                    if let Err(err) =
+                        db_manager.upsert_file(FileInfoEntry::initialize(
+                            &filename,
+                            true,
+                            String::from(conv_addr2id(
+                                &ip,
+                                self.configs.addr_local.port(),
+                            )),
+                        ))
+                    {
+                        log::error!("Error as upsert: {}", err);
+                        exit(1);
+                    }
 
                     log::debug!("Replication process: done step 5");
                 }
+
+                PacketId::GracefulShutdown => break,
 
                 _ => {
                     log::error!("Unsupported packet type: {}", packet);
@@ -289,6 +290,8 @@ impl<'conf> Node for Data<'conf> {
                 }
             };
         }
+
+        Ok(())
     }
 }
 

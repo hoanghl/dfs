@@ -8,7 +8,7 @@ use crate::components::{
 };
 use log;
 use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
+    net::{IpAddr, SocketAddr, SocketAddrV4},
     process::exit,
     str::FromStr,
     sync::mpsc::{Receiver, Sender},
@@ -416,6 +416,8 @@ impl<'a> Node for Master<'a> {
                             log::debug!("Replication process: done step 5");
                         }
 
+                        PacketId::GracefulShutdown => break,
+
                         _ => {
                             log::error!("Unsupported packet type: {}", packet);
                             continue;
@@ -475,6 +477,8 @@ impl<'a> Node for Master<'a> {
                 }
             };
         }
+
+        Ok(())
     }
 }
 
