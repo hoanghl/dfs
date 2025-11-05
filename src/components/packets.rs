@@ -618,6 +618,7 @@ impl Packet {
             PacketId::DataNodeSendData => {
                 // TODO: HoangLe [May-02]: Implement this
             }
+
             PacketId::ClientRequestAck => {
                 // Parse 'flag_read_write'
                 match payload[0] {
@@ -654,6 +655,7 @@ impl Packet {
             PacketId::StateSync => {
                 // TODO: HoangLe [May-02]: Implement this
             }
+
             PacketId::StateSyncAck => {
                 // TODO: HoangLe [May-02]: Implement this
             }
@@ -683,6 +685,14 @@ impl Packet {
             PacketId::ClientUploadAck => {}
 
             PacketId::GracefulShutdown => {}
+
+            PacketId::StatusService => {
+                packet.addr_sender.as_mut().unwrap().set_port(
+                    u16::from_be_bytes(payload.as_slice().try_into().expect(
+                        "Cannot parse 2 bytes in payload to port value",
+                    )),
+                );
+            }
 
             _ => return Err(ParseError::incorrect_packet_id(packet_id as u8)),
         }
@@ -965,6 +975,14 @@ impl Packet {
     pub fn create_client_upload_ack(addr_rcv: SocketAddr) -> Packet {
         Packet {
             packet_id: PacketId::ClientUploadAck,
+            addr_rcv: Some(addr_rcv),
+            ..Default::default()
+        }
+    }
+
+    pub fn create_status_service_ack(addr_rcv: SocketAddr) -> Packet {
+        Packet {
+            packet_id: PacketId::StatusServiceAck,
             addr_rcv: Some(addr_rcv),
             ..Default::default()
         }

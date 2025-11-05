@@ -418,6 +418,15 @@ impl<'a> Node for Master<'a> {
 
                         PacketId::GracefulShutdown => break,
 
+                        PacketId::StatusService => {
+                            forward_packet(
+                                sndr_p2s,
+                                Packet::create_status_service_ack(
+                                    self.configs.addr_local.clone(),
+                                ),
+                            );
+                        }
+
                         _ => {
                             log::error!("Unsupported packet type: {}", packet);
                             continue;
