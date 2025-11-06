@@ -2,8 +2,9 @@ mod components;
 
 use std::{env, net::Ipv4Addr};
 
+// use android_logger::Config;
 use jni::{
-    objects::{JClass, JObject, JString},
+    objects::{JClass, JString},
     JNIEnv,
 };
 use log;
@@ -37,15 +38,18 @@ pub struct ArgJNI {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn Java_expo_modules_myrustmodule_MyRustModule_triggerDfs<
-    'l,
->(
+
+pub unsafe extern "C" fn Java_tommy_modules_dfs_DFSService_triggerDfs<'l>(
     mut env: JNIEnv<'l>,
     _class: JClass,
     arg_str: JString,
-    _obj: JObject,
 ) {
     // Set up logger
+    // android_logger::init_once(
+    //     Config::default()
+    //         .with_tag("JNIRust")
+    //         .with_max_level(log::LevelFilter::Debug),
+    // );
     if cfg!(target_os = "android") {
         #[cfg(target_os = "android")]
         uds_log::initialize_log_stream("central.sock")

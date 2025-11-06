@@ -5,7 +5,7 @@ use std::{
     io::Write,
     os::{
         android::net::SocketAddrExt,
-        unix::net::{SocketAddr, UnixListener},
+        unix::net::{SocketAddr, UnixStream},
     },
     sync::{Arc, Mutex},
 };
@@ -38,15 +38,7 @@ pub fn initialize_log_stream(socket_path: &'static str) {
         }
     };
 
-    let listener = match UnixListener::bind_addr(&addr) {
-        Ok(listener) => listener,
-        Err(err) => {
-            log::error!("RUST: Cannot bind to {}: {}", socket_path, err);
-            return;
-        }
-    };
-
-    let stream = match listener.incoming().next().expect("Cannot get stream") {
+    let stream = match UnixStream::connect_addr(&addr) {
         Ok(stream) => Arc::new(Mutex::new(stream)),
         Err(err) => {
             log::error!("RUST: {err}");
