@@ -47,7 +47,7 @@ pub unsafe extern "C" fn Java_tommy_modules_dfs_DFSService_triggerDfs<'l>(
     // Set up logger
     // android_logger::init_once(
     //     Config::default()
-    //         .with_tag("JNIRust")
+    //         .with_tag("DFS")
     //         .with_max_level(log::LevelFilter::Debug),
     // );
     if cfg!(target_os = "android") {

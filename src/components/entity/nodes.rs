@@ -54,10 +54,14 @@ pub trait Node {
             log::error!("Err: {}", e);
         };
 
+        log::info!("thread:Processor is stopped");
+
         // ================================================
         // Join threads
         // ================================================
         self.trigger_graceful_shutdown(&flag_stop, addr_local, &sndr_p2s);
+
+        log::info!("Trigger stop for thread:Sender and thread:Receiver");
 
         if let Err(err) = thread_rcvr.join() {
             log::error!("Error as creating thread_rcvr: {:?}", err);
@@ -65,6 +69,8 @@ pub trait Node {
         if let Err(err) = thread_sndr.join() {
             log::error!("Error as creating thread_sndr: {:?}", err);
         }
+
+        log::info!("thread:Sender and thread:Receiver stopped");
     }
 
     /// Create a thread dedicated for receiving incoming message
@@ -97,11 +103,6 @@ pub trait Node {
 
                 match stream {
                     Ok(mut stream) => {
-                        log::debug!(
-                            "Receive connection from: {:?}",
-                            stream.peer_addr()
-                        );
-
                         let packet = match Packet::from_stream(&mut stream) {
                             Ok(packet) => packet,
                             Err(e) => {
@@ -109,6 +110,12 @@ pub trait Node {
                                 continue;
                             }
                         };
+
+                        log::debug!(
+                            "Receive connection from: {:?}: {:?}",
+                            stream.peer_addr(),
+                            packet.packet_id
+                        );
 
                         // Send to thread Processor
                         if let Err(err) = sndr_r2p.send(packet) {

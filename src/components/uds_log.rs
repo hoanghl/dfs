@@ -39,7 +39,7 @@ pub fn initialize_log_stream(socket_path: &'static str) {
 
     // 2. Set up log
     let mut builder = Builder::from_default_env();
-    builder
+    if let Err(err) = builder
         .format(move |_buf, record| {
             if let Ok(mut stream) = UnixStream::connect_addr(&addr) {
                 let msg = get_msg(record.level(), format!("{}", record.args()));
@@ -50,5 +50,8 @@ pub fn initialize_log_stream(socket_path: &'static str) {
             Ok(())
         })
         .filter_level(LevelFilter::Debug)
-        .init();
+        .try_init()
+    {
+        log::error!("Cannot initialize logger: {}", err)
+    }
 }
