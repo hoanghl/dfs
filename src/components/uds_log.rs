@@ -7,7 +7,6 @@ use std::{
         android::net::SocketAddrExt,
         unix::net::{SocketAddr, UnixStream},
     },
-    sync::{Arc, Mutex},
 };
 
 use chrono::Local;
@@ -38,23 +37,15 @@ pub fn initialize_log_stream(socket_path: &'static str) {
         }
     };
 
-    let stream = match UnixStream::connect_addr(&addr) {
-        Ok(stream) => Arc::new(Mutex::new(stream)),
-        Err(err) => {
-            log::error!("RUST: {err}");
-            return;
-        }
-    };
-
     // 2. Set up log
     let mut builder = Builder::from_default_env();
     builder
         .format(move |_buf, record| {
-            let stream = Arc::clone(&stream);
+            if let Ok(mut stream) = UnixStream::connect_addr(&addr) {
+                let msg = get_msg(record.level(), format!("{}", record.args()));
 
-            let msg = get_msg(record.level(), format!("{}", record.args()));
-
-            let _ = stream.lock().unwrap().write_all(msg.as_bytes());
+                let _ = stream.write_all(msg.as_bytes());
+            };
 
             Ok(())
         })
