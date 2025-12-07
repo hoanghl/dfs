@@ -199,7 +199,10 @@ pub trait Node {
         };
 
         // Shutdown thread:Sender
-        forward_packet(sndr_p2s, Packet::create_heartbeat(addr_local.clone()));
+        forward_packet(
+            sndr_p2s,
+            Packet::create_heartbeat(addr_local.clone(), addr_local.port()),
+        );
     }
 
     /// Start processor

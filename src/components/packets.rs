@@ -67,8 +67,6 @@ pub enum PacketId {
     Notify                  = 15,
     ClientUploadAck         = 16,
     GracefulShutdown        = 17,
-    StatusService           = 18,
-    StatusServiceAck        = 19,
 }
 
 pub struct Packet {
@@ -134,8 +132,6 @@ impl From<u8> for PacketId {
             15 => PacketId::Notify,
             16 => PacketId::ClientUploadAck,
             17 => PacketId::GracefulShutdown,
-            18 => PacketId::StatusService,
-            19 => PacketId::StatusServiceAck,
             _ => panic!("Error as parsing to enum PacketId: value = {}", value),
         }
     }
@@ -162,8 +158,6 @@ impl From<PacketId> for u8 {
             PacketId::Notify => 15,
             PacketId::ClientUploadAck => 16,
             PacketId::GracefulShutdown => 17,
-            PacketId::StatusService => 18,
-            PacketId::StatusServiceAck => 19,
         }
     }
 }
@@ -189,8 +183,6 @@ impl std::fmt::Display for PacketId {
             PacketId::Notify => "Notify",
             PacketId::ClientUploadAck => "ClientUploadAck",
             PacketId::GracefulShutdown => "GracefulShutdown",
-            PacketId::StatusService => "StatusService",
-            PacketId::StatusServiceAck => "StatusServiceAck",
         };
         write!(f, "{}", s)
     }
@@ -342,7 +334,13 @@ impl Packet {
         };
 
         match packet_id {
-            PacketId::Heartbeat => {}
+            PacketId::Heartbeat => {
+                packet.addr_sender.as_mut().unwrap().set_port(
+                    u16::from_be_bytes(payload.as_slice().try_into().expect(
+                        "Cannot parse 2 bytes in payload to port value",
+                    )),
+                );
+            }
             PacketId::HeartbeatAck => {
                 match String::from_utf8(payload) {
                     Ok(node_id) => packet.node_id = Some(node_id),
@@ -686,14 +684,6 @@ impl Packet {
 
             PacketId::GracefulShutdown => {}
 
-            PacketId::StatusService => {
-                packet.addr_sender.as_mut().unwrap().set_port(
-                    u16::from_be_bytes(payload.as_slice().try_into().expect(
-                        "Cannot parse 2 bytes in payload to port value",
-                    )),
-                );
-            }
-
             _ => return Err(ParseError::incorrect_packet_id(packet_id as u8)),
         }
 
@@ -702,10 +692,15 @@ impl Packet {
         return Ok(packet);
     }
 
-    pub fn create_heartbeat(addr_rcv: SocketAddr) -> Packet {
+    pub fn create_heartbeat(addr_rcv: SocketAddr, port: u16) -> Packet {
+        // Craft payload
+        let mut payload = Vec::<u8>::new();
+        payload.extend_from_slice(&port.to_be_bytes());
+
         Packet {
             packet_id: PacketId::Heartbeat,
             addr_rcv: Some(addr_rcv),
+            payload: Some(payload),
             ..Default::default()
         }
     }
@@ -975,14 +970,6 @@ impl Packet {
     pub fn create_client_upload_ack(addr_rcv: SocketAddr) -> Packet {
         Packet {
             packet_id: PacketId::ClientUploadAck,
-            addr_rcv: Some(addr_rcv),
-            ..Default::default()
-        }
-    }
-
-    pub fn create_status_service_ack(addr_rcv: SocketAddr) -> Packet {
-        Packet {
-            packet_id: PacketId::StatusServiceAck,
             addr_rcv: Some(addr_rcv),
             ..Default::default()
         }

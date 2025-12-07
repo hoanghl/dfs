@@ -8,7 +8,6 @@ use log;
 use std::{
     fs::File,
     io::Read,
-    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
     process::exit,
     sync::mpsc::{Receiver, Sender},
 };

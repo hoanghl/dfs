@@ -8,7 +8,7 @@ use crate::components::{
 };
 use log;
 use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
+    net::{IpAddr, SocketAddr},
     process::exit,
     sync::mpsc::{Receiver, Sender},
     time::Duration,
@@ -283,15 +283,6 @@ impl<'conf> Node for Data<'conf> {
                 }
 
                 PacketId::GracefulShutdown => break,
-
-                PacketId::StatusService => {
-                    forward_packet(
-                        sndr_p2s,
-                        Packet::create_status_service_ack(
-                            self.configs.addr_local.clone(),
-                        ),
-                    );
-                }
 
                 _ => {
                     log::error!("Unsupported packet type: {}", packet);
