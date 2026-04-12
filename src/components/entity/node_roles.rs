@@ -12,7 +12,7 @@ pub enum Role {
     Master  = 1,
     Data    = 2,
     DNS     = 3,
-    Client     = 4,
+    Client  = 4,
 }
 // ================================================
 // Implementations

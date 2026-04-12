@@ -7,6 +7,7 @@ use std::net::Ipv4Addr;
 // Definitions for DB entry
 // ================================================
 
+#[allow(unused_variables)]
 pub struct FileInfoEntry {
     pub filename: String,
     pub is_local: bool,
@@ -14,6 +15,7 @@ pub struct FileInfoEntry {
     pub last_updated: Option<DateTime<Local>>,
 }
 
+#[allow(unused_variables)]
 pub struct NodeInfoEntry {
     pub node_id: String,
     pub ip: Option<Ipv4Addr>,
@@ -26,8 +28,13 @@ pub struct NodeInfoEntry {
 // Implementations
 // ================================================
 
+#[allow(unused_variables)]
 impl FileInfoEntry {
-    pub fn initialize(filename: &String, is_local: bool, node_id: String) -> FileInfoEntry {
+    pub fn initialize(
+        filename: &String,
+        is_local: bool,
+        node_id: String,
+    ) -> FileInfoEntry {
         FileInfoEntry {
             filename: filename.clone(),
             is_local,
@@ -38,6 +45,7 @@ impl FileInfoEntry {
     }
 }
 
+#[allow(unused_variables)]
 impl NodeInfoEntry {
     pub fn initialize(ip: Ipv4Addr, port: u16, role: Role) -> NodeInfoEntry {
         NodeInfoEntry {

@@ -21,7 +21,7 @@ use crate::components::{
 // ================================================
 
 pub trait Node {
-    fn start(&mut self, port: u16) {
+    fn start(&mut self, addr_local: &SocketAddr) {
         // Use for communicating among threads inside node
         let (sndr_r2p, rcvr_r2p) = channel::<Packet>();
         let (sndr_p2s, rcvr_p2s) = channel::<Packet>();
@@ -30,64 +30,71 @@ pub trait Node {
         // ================================================
         let flag_stop = Arc::new(AtomicBool::new(false));
 
-        let thread_rcvr = match self.create_thread_receiver(port, sndr_r2p, &flag_stop) {
+        let thread_rcvr = match self
+            .create_thread_receiver(addr_local, sndr_r2p, &flag_stop)
+        {
             Ok(handle) => handle,
-            Err(err) => {
-                log::error!("{}", err);
-                return;
+            Err(e) => {
+                panic!("Err: {}", e);
             }
         };
-        let thread_sndr = match self.create_thread_sender(rcvr_p2s, &flag_stop) {
+        let thread_sndr = match self.create_thread_sender(rcvr_p2s, &flag_stop)
+        {
             Ok(handle) => handle,
             Err(err) => {
-                log::error!("{}", err);
-                return;
+                panic!("Err: {}", err);
             }
         };
 
         // ================================================
         // Start processing packets
         // ================================================
-        if let Err(_) = self.trigger_processor(&rcvr_r2p, &sndr_p2s) {
-            self.trigger_graceful_shutdown(&flag_stop, port, &sndr_p2s);
-        }
+        if let Err(e) = self.trigger_processor(&rcvr_r2p, &sndr_p2s) {
+            self.trigger_graceful_shutdown(&flag_stop, addr_local, &sndr_p2s);
+            log::error!("Err: {}", e);
+        };
+
+        log::info!("thread:Processor is stopped");
 
         // ================================================
         // Join threads
         // ================================================
-        self.trigger_graceful_shutdown(&flag_stop, port, &sndr_p2s);
+        self.trigger_graceful_shutdown(&flag_stop, addr_local, &sndr_p2s);
+
+        log::info!("Trigger stop for thread:Sender and thread:Receiver");
 
         if let Err(err) = thread_rcvr.join() {
             log::error!("Error as creating thread_rcvr: {:?}", err);
-            return;
         }
         if let Err(err) = thread_sndr.join() {
             log::error!("Error as creating thread_sndr: {:?}", err);
-            return;
         }
+
+        log::info!("thread:Sender and thread:Receiver stopped");
     }
 
     /// Create a thread dedicated for receiving incoming message
     fn create_thread_receiver(
         &self,
-        port: u16,
+        addr_local: &SocketAddr,
         sndr_r2p: Sender<Packet>,
         flag_stop: &Arc<AtomicBool>,
     ) -> Result<JoinHandle<()>, NodeCreationError> {
         log::info!("Creating thread: Receiver");
 
         let flag = Arc::clone(&flag_stop);
-        let addr_node = SocketAddr::from(([0, 0, 0, 0], port));
+
+        let addr_local = addr_local.clone();
 
         Ok(thread::spawn(move || {
-            let listener = match TcpListener::bind(&addr_node) {
+            let listener = match TcpListener::bind(addr_local) {
                 Ok(listener) => listener,
-                Err(_) => {
-                    log::error!("Cannot bind to {}", addr_node);
+                Err(err) => {
+                    log::error!("Cannot bind to {}: {}", addr_local, err);
                     panic!();
                 }
             };
-            log::info!("Server starts at {}", addr_node);
+            log::info!("Server starts at {}", addr_local);
 
             for stream in listener.incoming() {
                 if flag.load(Ordering::Relaxed) {
@@ -103,6 +110,12 @@ pub trait Node {
                                 continue;
                             }
                         };
+
+                        log::debug!(
+                            "Receive connection from: {:?}: {:?}",
+                            stream.peer_addr(),
+                            packet.packet_id
+                        );
 
                         // Send to thread Processor
                         if let Err(err) = sndr_r2p.send(packet) {
@@ -147,35 +160,48 @@ pub trait Node {
                 // Connect and send
                 let mut stream = match TcpStream::connect(&addr_rcv) {
                     Ok(stream) => stream,
-                    Err(_) => {
-                        log::error!("Cannot connect to address: {}", addr_rcv);
+                    Err(err) => {
+                        log::error!(
+                            "Cannot connect to address: {}: {}",
+                            addr_rcv,
+                            err
+                        );
                         continue;
                     }
                 };
 
                 let a = packet.to_bytes();
                 if let Err(err) = stream.write_all(a.as_slice()) {
-                    log::error!("Cannot send to address: {} : {}", &addr_rcv, err);
+                    log::error!(
+                        "Cannot send to address: {} : {}",
+                        &addr_rcv,
+                        err
+                    );
                 }
             }
         }))
     }
 
     /// Gracefully shutdown thread:Receiver and thread:Sender
-    fn trigger_graceful_shutdown(&self, flag_stop: &Arc<AtomicBool>, port: u16, sndr_p2s: &Sender<Packet>) {
+    fn trigger_graceful_shutdown(
+        &self,
+        flag_stop: &Arc<AtomicBool>,
+        addr_local: &SocketAddr,
+        sndr_p2s: &Sender<Packet>,
+    ) {
         log::debug!("trigger_graceful_shutdown invoked!");
 
         flag_stop.store(true, Ordering::Relaxed);
 
         // Shutdown thread:Receiver
-        if let Err(err) = TcpStream::connect(SocketAddr::from(([127, 0, 0, 1], port))) {
+        if let Err(err) = TcpStream::connect(addr_local) {
             log::error!("Error as executing gracefull shutdown: {}", err);
         };
 
         // Shutdown thread:Sender
         forward_packet(
             sndr_p2s,
-            Packet::create_heartbeat(SocketAddr::from(([127, 0, 0, 1], port))),
+            Packet::create_heartbeat(addr_local.clone(), addr_local.port()),
         );
     }
 

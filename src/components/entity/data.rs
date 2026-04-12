@@ -8,25 +8,23 @@ use crate::components::{
 };
 use log;
 use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
+    net::{IpAddr, SocketAddr},
     process::exit,
     sync::mpsc::{Receiver, Sender},
     time::Duration,
 };
 
-pub struct Data<'a> {
-    configs: &'a Configs,
+pub struct Data<'conf> {
+    configs: &'conf Configs,
 }
 
-impl<'a> Node for Data<'a> {
+impl<'conf> Node for Data<'conf> {
     fn trigger_processor(
         &mut self,
         rcvr_r2p: &Receiver<Packet>,
         sndr_p2s: &Sender<Packet>,
     ) -> Result<(), NodeCreationError> {
-        let addr_dns: SocketAddr = SocketAddr::new(IpAddr::V4(self.configs.ip_dns), self.configs.port_dns);
         let mut addr_master: Option<SocketAddr> = None;
-        let addr_current = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), self.configs.args.port));
 
         // For data management
         let file_utils = match FileUtils::new(&self.configs) {
@@ -59,7 +57,10 @@ impl<'a> Node for Data<'a> {
         // ================================================
 
         // Ask Master IP from DNS and notify to current master
-        if let Err(err) = sndr_p2s.send(Packet::create_ask_ip(addr_dns, self.configs.args.port)) {
+        if let Err(err) = sndr_p2s.send(Packet::create_ask_ip(
+            self.configs.addr_dns,
+            self.configs.addr_local.port(),
+        )) {
             log::error!("Error as sending AskIP: {}", err);
             return Err(NodeCreationError {
                 error_code: NodeCreationErrorCode::ProcessorThreadErr,
@@ -70,7 +71,9 @@ impl<'a> Node for Data<'a> {
         // Start processing loop
         // ================================================
         loop {
-            let packet = match rcvr_r2p.recv_timeout(Duration::from_secs(self.configs.timeout_chan_wait)) {
+            let packet = match rcvr_r2p.recv_timeout(Duration::from_secs(
+                self.configs.timeout_chan_wait,
+            )) {
                 Ok(packet) => packet,
                 Err(_) => continue,
             };
@@ -79,43 +82,69 @@ impl<'a> Node for Data<'a> {
                 PacketId::Heartbeat => {
                     forward_packet(
                         sndr_p2s,
-                        Packet::create_heartbeat_ack(addr_master.clone().unwrap(), addr_current.clone()),
+                        Packet::create_heartbeat_ack(
+                            addr_master.clone().unwrap(),
+                            self.configs.addr_local.clone(),
+                        ),
                     );
                 }
                 PacketId::AskIpAck => match packet.addr_master {
                     None => {
-                        log::error!("Received packet not contain address of Master");
+                        log::error!(
+                            "Received packet not contain address of Master"
+                        );
                         continue;
                     }
                     Some(addr) => {
                         addr_master = Some(addr.clone());
 
-                        forward_packet(sndr_p2s, Packet::create_notify(addr, &Role::Data, addr_current.clone()));
+                        forward_packet(
+                            sndr_p2s,
+                            Packet::create_notify(
+                                addr,
+                                &Role::Data,
+                                self.configs.addr_local.clone(),
+                            ),
+                        );
                     }
                 },
                 PacketId::ClientUpload => {
                     let filename = packet.filename.unwrap();
 
                     // Store data
-                    if let Err(err) = file_utils.save_file(&filename, packet.binary.as_ref().unwrap()) {
-                        log::error!("Cannot create new file: {}: Err: {}", filename, err);
+                    if let Err(err) = file_utils
+                        .save_file(&filename, packet.binary.as_ref().unwrap())
+                    {
+                        log::error!(
+                            "Cannot create new file: {}: Err: {}",
+                            filename,
+                            err
+                        );
                         continue;
                     };
 
                     // Insert data
-                    let ip = match addr_current.ip() {
+                    let ip = match self.configs.addr_local.ip() {
                         IpAddr::V4(ip) => ip,
                         _ => {
-                            log::error!("Cannot parse addr_current to IpV4 format: {}", { addr_current });
+                            log::error!(
+                                "Cannot parse self.configs.addr_local to IpV4 format: {}",
+                                { self.configs.addr_local }
+                            );
                             continue;
                         }
                     };
 
-                    if let Err(err) = db_manager.upsert_file(FileInfoEntry::initialize(
-                        &filename,
-                        true,
-                        String::from(conv_addr2id(&ip, addr_current.port())),
-                    )) {
+                    if let Err(err) =
+                        db_manager.upsert_file(FileInfoEntry::initialize(
+                            &filename,
+                            true,
+                            String::from(conv_addr2id(
+                                &ip,
+                                self.configs.addr_local.port(),
+                            )),
+                        ))
+                    {
                         log::error!("Error as upsert: {}", err);
                         exit(1);
                     }
@@ -123,7 +152,9 @@ impl<'a> Node for Data<'a> {
                     // Send ACK to client
                     forward_packet(
                         sndr_p2s,
-                        Packet::create_client_upload_ack(packet.addr_sender.clone().unwrap()),
+                        Packet::create_client_upload_ack(
+                            packet.addr_sender.clone().unwrap(),
+                        ),
                     );
 
                     // Notify Master (aka itself) node the writing process is completed
@@ -131,7 +162,7 @@ impl<'a> Node for Data<'a> {
                         sndr_p2s,
                         Packet::create_client_request_ack(
                             Action::Write,
-                            addr_current.port(),
+                            self.configs.addr_local.port(),
                             &filename,
                             addr_master.unwrap().clone(),
                         ),
@@ -144,14 +175,22 @@ impl<'a> Node for Data<'a> {
                     let binary = match file_utils.read_file(&filename) {
                         Ok(binary) => binary,
                         Err(err) => {
-                            log::error!("Err as reading file '{}': {}", &filename, err);
+                            log::error!(
+                                "Err as reading file '{}': {}",
+                                &filename,
+                                err
+                            );
                             continue;
                         }
                     };
 
                     forward_packet(
                         sndr_p2s,
-                        Packet::create_send_replica(packet.addr_deliver.unwrap(), filename, binary),
+                        Packet::create_send_replica(
+                            packet.addr_deliver.unwrap(),
+                            filename,
+                            binary,
+                        ),
                     );
 
                     log::debug!("Replication process: done step 3.1");
@@ -164,23 +203,36 @@ impl<'a> Node for Data<'a> {
 
                     // Store data
                     if let Err(err) = file_utils.save_file(&filename, &binary) {
-                        log::error!("Cannot create new file: {}: Err: {}", filename, err);
+                        log::error!(
+                            "Cannot create new file: {}: Err: {}",
+                            filename,
+                            err
+                        );
                         continue;
                     };
 
                     // Insert data
-                    let ip = match addr_current.ip() {
+                    let ip = match self.configs.addr_local.ip() {
                         IpAddr::V4(ip) => ip,
                         _ => {
-                            log::error!("Cannot parse addr_current to IpV4 format: {}", { addr_current });
+                            log::error!(
+                                "Cannot parse self.configs.addr_local to IpV4 format: {}",
+                                { self.configs.addr_local }
+                            );
                             continue;
                         }
                     };
-                    if let Err(err) = db_manager.upsert_file(FileInfoEntry::initialize(
-                        &filename,
-                        true,
-                        String::from(conv_addr2id(&ip, addr_current.port())),
-                    )) {
+
+                    if let Err(err) =
+                        db_manager.upsert_file(FileInfoEntry::initialize(
+                            &filename,
+                            true,
+                            String::from(conv_addr2id(
+                                &ip,
+                                self.configs.addr_local.port(),
+                            )),
+                        ))
+                    {
                         log::error!("Error as upsert: {}", err);
                         exit(1);
                     }
@@ -190,7 +242,10 @@ impl<'a> Node for Data<'a> {
                     // [Replication step 4]: Send ACK to Master
                     forward_packet(
                         sndr_p2s,
-                        Packet::create_send_replica_ack(addr_master.unwrap().clone(), filename),
+                        Packet::create_send_replica_ack(
+                            addr_master.unwrap().clone(),
+                            filename,
+                        ),
                     );
 
                     log::debug!("Replication process: done step 4");
@@ -202,15 +257,24 @@ impl<'a> Node for Data<'a> {
                     let ip = match packet.addr_sender.unwrap().ip() {
                         IpAddr::V4(ip) => ip,
                         _ => {
-                            log::error!("Cannot parse addr_current to IpV4 format: {}", { addr_current });
+                            log::error!(
+                                "Cannot parse self.configs.addr_local to IpV4 format: {}",
+                                { self.configs.addr_local }
+                            );
                             continue;
                         }
                     };
-                    if let Err(err) = db_manager.upsert_file(FileInfoEntry::initialize(
-                        &filename,
-                        true,
-                        String::from(conv_addr2id(&ip, addr_current.port())),
-                    )) {
+
+                    if let Err(err) =
+                        db_manager.upsert_file(FileInfoEntry::initialize(
+                            &filename,
+                            true,
+                            String::from(conv_addr2id(
+                                &ip,
+                                self.configs.addr_local.port(),
+                            )),
+                        ))
+                    {
                         log::error!("Error as upsert: {}", err);
                         exit(1);
                     }
@@ -218,18 +282,22 @@ impl<'a> Node for Data<'a> {
                     log::debug!("Replication process: done step 5");
                 }
 
+                PacketId::GracefulShutdown => break,
+
                 _ => {
                     log::error!("Unsupported packet type: {}", packet);
                     continue;
                 }
             };
         }
+
+        Ok(())
     }
 }
 
-impl<'a> Data<'a> {
+impl<'conf> Data<'conf> {
     /// Create new node
-    pub fn new(configs: &Configs) -> Data {
+    pub fn new(configs: &'conf Configs) -> Data<'conf> {
         Data { configs }
     }
 }

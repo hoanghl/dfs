@@ -55,7 +55,10 @@ impl InMemDB<FileInfoEntry> for FileInfoDB {
 }
 
 impl FileInfoDB {
-    pub fn intialize(db_name: &'static str, conn: &Connection) -> Result<FileInfoDB, rusqlite::Error> {
+    pub fn intialize(
+        db_name: &'static str,
+        conn: &Connection,
+    ) -> Result<FileInfoDB, rusqlite::Error> {
         let mut db = FileInfoDB { db_name };
 
         match db.create_db(conn) {
@@ -80,7 +83,12 @@ impl FileInfoDB {
                 self.db_name
             )
             .as_str(),
-            params![info.filename, info.is_local, info.node_id, current.to_rfc3339(),],
+            params![
+                info.filename,
+                info.is_local,
+                info.node_id,
+                current.to_rfc3339(),
+            ],
         ) {
             Ok(size) => log::debug!("Upserted: {}", size),
             Err(err) => log::error!("{}", err),
@@ -90,7 +98,8 @@ impl FileInfoDB {
     }
 
     pub fn print_all_db(&self, conn: &Connection) -> Result<()> {
-        let mut stmt = conn.prepare(format!("SELECT * FROM {};", self.db_name).as_str())?;
+        let mut stmt =
+            conn.prepare(format!("SELECT * FROM {};", self.db_name).as_str())?;
         let _ = stmt.query_map([], |row| {
             log::debug!("inside: {:?}", row.get::<usize, String>(3));
 
@@ -98,15 +107,24 @@ impl FileInfoDB {
                 filename: row.get(0)?,
                 is_local: row.get::<usize, i32>(1)? == 1,
                 node_id: row.get(3)?,
-                last_updated: Some(row.get::<usize, String>(4)?.parse().unwrap()),
+                last_updated: Some(
+                    row.get::<usize, String>(4)?.parse().unwrap(),
+                ),
             })
         })?;
 
         Ok(())
     }
 
-    pub fn get_file_info(&self, conn: &Connection, filename: &String) -> Result<Vec<FileInfoEntry>> {
-        let mut stmt = conn.prepare(format!("SELECT * FROM {} WHERE filename = ?1;", self.db_name).as_str())?;
+    pub fn get_file_info(
+        &self,
+        conn: &Connection,
+        filename: &String,
+    ) -> Result<Vec<FileInfoEntry>> {
+        let mut stmt = conn.prepare(
+            format!("SELECT * FROM {} WHERE filename = ?1;", self.db_name)
+                .as_str(),
+        )?;
         let rows = stmt.query_map([&filename], |row| {
             log::debug!("inside: {:?}", row.get::<usize, String>(3));
 
@@ -114,7 +132,9 @@ impl FileInfoDB {
                 filename: row.get(0)?,
                 is_local: row.get::<usize, i32>(1)? == 1,
                 node_id: row.get(3)?,
-                last_updated: Some(row.get::<usize, String>(4)?.parse().unwrap()),
+                last_updated: Some(
+                    row.get::<usize, String>(4)?.parse().unwrap(),
+                ),
             })
         })?;
 
@@ -147,7 +167,10 @@ impl InMemDB<NodeInfoEntry> for NodeInfoDB {
 }
 
 impl NodeInfoDB {
-    pub fn intialize(db_name: &'static str, conn: &Connection) -> Result<NodeInfoDB, rusqlite::Error> {
+    pub fn intialize(
+        db_name: &'static str,
+        conn: &Connection,
+    ) -> Result<NodeInfoDB, rusqlite::Error> {
         let mut db = NodeInfoDB { db_name };
 
         match db.create_db(conn) {
@@ -156,8 +179,16 @@ impl NodeInfoDB {
         }
     }
 
-    pub fn upsert(&self, conn: &Connection, ip: Ipv4Addr, port: u16, role: Role) -> Result<()> {
+    pub fn upsert(
+        &self,
+        conn: &Connection,
+        ip: Ipv4Addr,
+        port: u16,
+        role: Role,
+    ) -> Result<()> {
         let current = Local::now();
+
+        log::debug!("Upsert: {} - {} - {}", ip, port, role);
 
         match conn.execute(
             format!(
@@ -181,17 +212,25 @@ impl NodeInfoDB {
                 current.to_rfc3339(),
             ],
         ) {
-            Ok(size) => log::info!("Upserted: {}", size),
+            Ok(size) => log::debug!("Upserted: {}", size),
             Err(err) => log::error!("{}", err),
         };
 
         Ok(())
     }
 
-    pub fn get_node_info(&self, conn: &Connection, ip: Ipv4Addr, port: u16) -> Result<Vec<NodeInfoEntry>> {
+    pub fn get_node_info(
+        &self,
+        conn: &Connection,
+        ip: Ipv4Addr,
+        port: u16,
+    ) -> Result<Vec<NodeInfoEntry>> {
         let node_id = utils::conv_addr2id(&ip, port);
 
-        let mut stmt = conn.prepare(format!("SELECT * FROM {} WHERE node_id = ?1;", self.db_name).as_str())?;
+        let mut stmt = conn.prepare(
+            format!("SELECT * FROM {} WHERE node_id = ?1;", self.db_name)
+                .as_str(),
+        )?;
         let rows = stmt.query_map([&node_id], |row| {
             log::debug!("inside: {:?}", row.get::<usize, String>(3));
 
@@ -199,7 +238,11 @@ impl NodeInfoDB {
             let ip = match Ipv4Addr::from_str(ip_str.as_str()) {
                 Ok(ip) => Some(ip),
                 Err(e) => {
-                    log::error!("Cannot parse following to Ipv4: {}: {}", ip_str, e);
+                    log::error!(
+                        "Cannot parse following to Ipv4: {}: {}",
+                        ip_str,
+                        e
+                    );
                     None
                 }
             };
@@ -209,21 +252,32 @@ impl NodeInfoDB {
                 ip: ip,
                 port: row.get::<usize, u16>(2)?,
                 role: Role::from(row.get::<usize, u8>(3)?),
-                last_updated: Some(row.get::<usize, String>(4)?.parse().unwrap()),
+                last_updated: Some(
+                    row.get::<usize, String>(4)?.parse().unwrap(),
+                ),
             })
         })?;
 
         rows.collect()
     }
 
-    pub fn get_data_nodes(&self, conn: &Connection) -> Result<Vec<NodeInfoEntry>> {
-        let mut stmt = conn.prepare(format!("SELECT * FROM {} WHERE role = ?1;", self.db_name).as_str())?;
+    pub fn get_data_nodes(
+        &self,
+        conn: &Connection,
+    ) -> Result<Vec<NodeInfoEntry>> {
+        let mut stmt = conn.prepare(
+            format!("SELECT * FROM {} WHERE role = ?1;", self.db_name).as_str(),
+        )?;
         let rows = stmt.query_map([&u8::from(&Role::Data)], |row| {
             let ip_str: String = row.get(1)?;
             let ip = match Ipv4Addr::from_str(ip_str.as_str()) {
                 Ok(ip) => Some(ip),
                 Err(e) => {
-                    log::error!("Cannot parse following to Ipv4: {}: {}", ip_str, e);
+                    log::error!(
+                        "Cannot parse following to Ipv4: {}: {}",
+                        ip_str,
+                        e
+                    );
                     None
                 }
             };
@@ -233,7 +287,9 @@ impl NodeInfoDB {
                 ip: ip,
                 port: row.get::<usize, u16>(2)?,
                 role: Role::from(row.get::<usize, u8>(3)?),
-                last_updated: Some(row.get::<usize, String>(4)?.parse().unwrap()),
+                last_updated: Some(
+                    row.get::<usize, String>(4)?.parse().unwrap(),
+                ),
             })
         })?;
 

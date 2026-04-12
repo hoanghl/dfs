@@ -13,11 +13,11 @@ use crate::components::{
     packets::{forward_packet, Packet, PacketId},
 };
 
-pub struct DNS<'a> {
-    configs: &'a Configs,
+pub struct DNS<'conf> {
+    configs: &'conf Configs,
 }
 
-impl<'a> Node for DNS<'a> {
+impl<'conf> Node for DNS<'conf> {
     fn trigger_processor(
         &mut self,
         rcvr_r2p: &Receiver<Packet>,
@@ -29,7 +29,9 @@ impl<'a> Node for DNS<'a> {
         // Start processing loop
         // ================================================
         loop {
-            let packet = match rcvr_r2p.recv_timeout(Duration::from_secs(self.configs.timeout_chan_wait)) {
+            let packet = match rcvr_r2p.recv_timeout(Duration::from_secs(
+                self.configs.timeout_chan_wait,
+            )) {
                 Ok(packet) => packet,
                 Err(_) => continue,
             };
@@ -38,7 +40,9 @@ impl<'a> Node for DNS<'a> {
 
             let addr_sender = match packet.addr_sender {
                 None => {
-                    log::error!("Attribute 'addr_sender' in packet not existed.");
+                    log::error!(
+                        "Attribute 'addr_sender' in packet not existed."
+                    );
                     continue;
                 }
                 Some(addr) => addr,
@@ -49,10 +53,19 @@ impl<'a> Node for DNS<'a> {
                     // Data/Client --AskIp-> DNS
                     match addr_master {
                         None => {
-                            forward_packet(sndr_p2s, Packet::create_ask_ip_ack(addr_sender, None));
+                            forward_packet(
+                                sndr_p2s,
+                                Packet::create_ask_ip_ack(addr_sender, None),
+                            );
                         }
                         Some(addr_master) => {
-                            forward_packet(sndr_p2s, Packet::create_ask_ip_ack(addr_sender, Some(&addr_master)));
+                            forward_packet(
+                                sndr_p2s,
+                                Packet::create_ask_ip_ack(
+                                    addr_sender,
+                                    Some(&addr_master),
+                                ),
+                            );
                         }
                     };
                 }
@@ -60,7 +73,10 @@ impl<'a> Node for DNS<'a> {
                     // Master --Notify-> DNS
 
                     addr_master = packet.addr_sender;
-                    log::info!("Address Master just notified: {}", &addr_master.as_ref().unwrap());
+                    log::info!(
+                        "Address Master just notified: {}",
+                        &addr_master.as_ref().unwrap()
+                    );
                 }
                 _ => {
                     log::error!("Unsupported packet type: {}", packet);
@@ -71,9 +87,9 @@ impl<'a> Node for DNS<'a> {
     }
 }
 
-impl<'a> DNS<'a> {
+impl<'conf> DNS<'conf> {
     /// Create new node
-    pub fn new(configs: &Configs) -> DNS {
+    pub fn new(configs: &'conf Configs) -> DNS<'conf> {
         DNS { configs }
     }
 }
