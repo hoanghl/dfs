@@ -32,7 +32,7 @@ Lands with M1.1 and later, per file: `protocol/` (`packets.ts`, `codec.ts`, `byt
 ## Rules
 
 - One package, no workspaces: `dfs-cli` and `xbutler-fe` consume `dfs-core`, they are not part of it.
-- No `Buffer`, `node:*`, `setTimeout`, or `console` in `src/` — `tsconfig` keeps Node types out so those fail to compile.
+- `src/` stays runtime-agnostic, because the same code runs on Node.js and on React Native: use no `Buffer`, `node:*` modules, `setTimeout`, or `console`. `tsconfig.json` sets `"types": []`, so importing Node.js APIs fails the build instead of being caught in review.
 - I/O arrives through `platform.ts` only; core never implements it.
 - Time comes from `Clock`, so timers are testable.
 - Build with `tsc` (JS + `.d.ts`, no bundler); test with `bun test`.
