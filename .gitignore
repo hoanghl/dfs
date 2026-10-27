@@ -65,3 +65,7 @@ target/
 .env
 data/
 **/documents/*.bkp
+
+# dfs-ts (TypeScript package)
+dfs-ts/node_modules/
+dfs-ts/dist/

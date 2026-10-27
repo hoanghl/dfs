@@ -1,0 +1,33 @@
+{
+  "name": "dfs-core",
+  "version": "0.0.0",
+  "description": "Sans-I/O core for the DFS cluster protocol (TypeScript rewrite)",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test",
+    "check:package": "publint && attw --pack . --ignore-rules cjs-resolves-to-esm"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.2",
+    "publint": "^0.3.12",
+    "typescript": "^5.9.2"
+  }
+}

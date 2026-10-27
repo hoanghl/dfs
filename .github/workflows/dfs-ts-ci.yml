@@ -1,0 +1,41 @@
+name: dfs-ts
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "dfs-ts/**"
+      - ".github/workflows/dfs-ts-ci.yml"
+  pull_request:
+    paths:
+      - "dfs-ts/**"
+      - ".github/workflows/dfs-ts-ci.yml"
+
+defaults:
+  run:
+    working-directory: dfs-ts
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test
+        run: bun test
+
+      - name: Build
+        run: bun run build
+
+      - name: Package lint
+        run: bun run check:package
