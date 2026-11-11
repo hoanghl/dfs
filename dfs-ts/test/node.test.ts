@@ -32,12 +32,12 @@ async function startNode(network: MemoryNetwork, onPacket: PacketHandler): Promi
   const node = await createNode(
     { role: "data", listen: { ip: NODE_IP, port: 0 }, dns: DNS },
     { transport, clock, logger },
-    onPacket,
+    { handle: onPacket },
   );
   const peer = network.createTransport(PEER_IP);
   const peerServer = await peer.listen(0, () => {});
   const sendRaw = (frame: Uint8Array): Promise<void> =>
-    peer.send({ ip: NODE_IP, port: node.port }, frame);
+    peer.send({ ip: NODE_IP, port: node.context.port }, frame);
   return {
     node,
     logger,

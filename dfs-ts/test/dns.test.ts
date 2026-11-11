@@ -59,7 +59,7 @@ async function startDns(network: MemoryNetwork): Promise<Dns> {
     { transport, clock, logger },
     createDnsRole(cluster),
   );
-  return { node, cluster, logger, address: { ip: DNS_IP, port: node.port } };
+  return { node, cluster, logger, address: { ip: DNS_IP, port: node.context.port } };
 }
 
 async function pump(dns: Dns): Promise<void> {
