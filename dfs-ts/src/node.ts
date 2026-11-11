@@ -34,20 +34,32 @@ export type PacketHandler = (
   context: NodeContext,
 ) => void | Promise<void>;
 
+/** A role the node runs: its packet handler plus optional startup I/O. */
+export interface RoleRuntime {
+  /** Handle one decoded packet. */
+  readonly handle: PacketHandler;
+  /**
+   * Run once after the listener binds and before `createNode` resolves, so it
+   * reads the real port when the config asked for `0`. A rejection fails the
+   * startup and closes the listener.
+   */
+  start?(context: NodeContext): Promise<void>;
+}
+
 export interface Node {
-  /** Port actually bound. */
-  readonly port: number;
+  /** Context handed to the handler; carries the port actually bound. */
+  readonly context: NodeContext;
   /** Resolves once every frame queued so far has been handled. */
   idle(): Promise<void>;
   /** Stop listening, then let in-flight frames finish. Safe to call twice. */
   stop(): Promise<void>;
 }
 
-/** Start listening and dispatch frames to `onPacket`, one at a time. */
+/** Start listening and dispatch frames to `role`, one at a time. */
 export async function createNode(
   config: NodeConfig,
   { transport, clock, logger }: NodeDependencies,
-  onPacket: PacketHandler,
+  role: RoleRuntime,
 ): Promise<Node> {
   let tail: Promise<void> = Promise.resolve();
   let stopping = false;
@@ -57,6 +69,13 @@ export async function createNode(
     tail = tail.then(() => dispatch(frame, peer));
   });
   const context: NodeContext = { config, port: server.port, transport, clock, logger };
+
+  try {
+    await role.start?.(context);
+  } catch (error) {
+    await server.close();
+    throw error;
+  }
 
   async function dispatch(frame: Uint8Array, peer: NodeAddress): Promise<void> {
     const result = decode(frame);
@@ -69,7 +88,7 @@ export async function createNode(
       return;
     }
     try {
-      await onPacket(result.value, peer, context);
+      await role.handle(result.value, peer, context);
     } catch (error) {
       logger.error("packet handler failed", {
         packetId: result.value.id,
@@ -80,7 +99,7 @@ export async function createNode(
   }
 
   return {
-    port: server.port,
+    context,
     idle: () => tail,
     async stop() {
       if (stopping) return;
