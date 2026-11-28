@@ -3,9 +3,11 @@ import { describe, expect, test } from "bun:test";
 import { Cluster } from "../src/core/cluster.ts";
 import { DnsProcessor } from "../src/core/dns.ts";
 import { MasterProcessor } from "../src/core/master.ts";
+import { NodeDriver } from "../src/driver/driver.ts";
 import { decode, encode } from "../src/protocol/codec.ts";
 import { createAskIp, createAskIpAck, createNotify, type Packet } from "../src/protocol/packets.ts";
 import type { NodeAddress } from "../src/types.ts";
+import { createManualClock, createMemoryNetwork, createRecordingLogger, settle } from "./memory-platform.ts";
 
 const DNS: NodeAddress = { ip: "10.0.0.1", port: 53 };
 const MASTER: NodeAddress = { ip: "10.0.0.4", port: 7000 };
@@ -124,5 +126,33 @@ describe("MasterProcessor", () => {
       { kind: "log", level: "warn", message: "dropped undecodable frame" },
     ]);
     expect(master.nextDeadline()).toBeNull();
+  });
+});
+
+describe("DNS and Master on the driver", () => {
+  test("master is registered on DNS after start (master half of F3)", async () => {
+    const network = createMemoryNetwork();
+    const dnsCluster = new Cluster();
+    const dns = new NodeDriver(
+      new DnsProcessor(dnsCluster),
+      network.createTransport(DNS.ip),
+      createManualClock(),
+      createRecordingLogger(),
+    );
+    const master = new NodeDriver(
+      new MasterProcessor(DNS, new Cluster()),
+      network.createTransport(MASTER.ip),
+      createManualClock(),
+      createRecordingLogger(),
+    );
+
+    await dns.start(DNS.port);
+    await master.start(MASTER.port);
+    await settle();
+
+    expect(dnsCluster.list()).toEqual([
+      { address: MASTER, role: "master", lastSeen: expect.any(Number) },
+    ]);
+    await Promise.all([dns.stop(), master.stop()]);
   });
 });

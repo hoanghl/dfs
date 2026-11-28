@@ -41,7 +41,7 @@ export function createMemoryNetwork(firstEphemeralPort = 41_000): MemoryNetwork 
   };
 }
 
-/** Let queued deliveries and handler chains run; one macrotask flushes them. */
+/** Let queued deliveries run; one macrotask flushes the microtask queue. */
 export function settle(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
