@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { Input, Output, Processor } from "../src/core/processor.ts";
 import { NodeDriver } from "../src/driver/driver.ts";
-import type { Transport } from "../src/platform.ts";
+import type { Transport } from "../src/driver/platform.ts";
 import type { NodeAddress } from "../src/types.ts";
 import {
   createManualClock,
