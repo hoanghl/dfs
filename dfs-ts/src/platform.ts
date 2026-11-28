@@ -36,10 +36,17 @@ export interface Interval {
   cancel(): void;
 }
 
+/** Cancellation handle returned by {@link Clock.after}. */
+export interface Timer {
+  cancel(): void;
+}
+
 /** Injected time, so timers and timeouts are testable. */
 export interface Clock {
   /** Milliseconds since the epoch. */
   now(): number;
+  /** Run `fn` once after `ms`; call `cancel()` to stop it. */
+  after(ms: number, fn: () => void): Timer;
   /** Run `tick` every `intervalMs`; call `cancel()` to stop. */
   every(intervalMs: number, tick: () => void): Interval;
 }
