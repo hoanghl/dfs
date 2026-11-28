@@ -25,22 +25,13 @@ const BYTES = new Uint8Array([1, 2, 3]);
 class ScriptedProcessor implements Processor {
   readonly inputs: Input[] = [];
   deadline: number | null = null;
-  /** True while `handle` runs; a second `handle` starting inside one is a bug. */
-  inside = false;
-  reentered = false;
   /** @param script Outputs to return for each input; none by default. */
   constructor(private readonly script: (input: Input) => Output[] = () => []) {}
 
-  /** Record `input`, flag re-entrant calls, and return the scripted outputs. */
+  /** Record `input` and return the scripted outputs. */
   handle(input: Input): Output[] {
-    if (this.inside) this.reentered = true;
-    this.inside = true;
-    try {
-      this.inputs.push(input);
-      return this.script(input);
-    } finally {
-      this.inside = false;
-    }
+    this.inputs.push(input);
+    return this.script(input);
   }
 
   /** The deadline a test has set, or `null` for none. */
@@ -154,34 +145,6 @@ describe("NodeDriver", () => {
     // No deadline left, so nothing is armed.
     clock.advance(10_000);
     expect(processor.kinds).toHaveLength(3);
-    await driver.stop();
-  });
-
-  test("drains an input fed during handle in order, after the current one returns", async () => {
-    let deliver: ((bytes: Uint8Array, peer: NodeAddress) => void) | undefined;
-    const second = new Uint8Array([9]);
-    const processor = new ScriptedProcessor((input) => {
-      if (input.kind === "frame" && input.bytes === BYTES) deliver?.(second, OTHER);
-      return [];
-    });
-    const { driver } = setup(processor, (inner) => ({
-      send: inner.send,
-      listen(port, onFrame) {
-        deliver = onFrame;
-        return inner.listen(port, onFrame);
-      },
-    }));
-    await driver.start(0);
-
-    deliver?.(BYTES, PEER);
-
-    expect(processor.kinds).toEqual(["started", "frame", "frame"]);
-    expect(processor.inputs.map((input) => (input.kind === "frame" ? input.peer : null))).toEqual([
-      null,
-      PEER,
-      OTHER,
-    ]);
-    expect(processor.reentered).toBe(false);
     await driver.stop();
   });
 

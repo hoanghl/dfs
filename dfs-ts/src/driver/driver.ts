@@ -17,10 +17,8 @@ import type { Clock, Logger, Server, Timer, Transport } from "../platform.js";
  * become inputs, and the processor's outputs become log lines and sends.
  */
 export class NodeDriver {
-  private readonly pending: Input[] = [];
   /** Frames that arrived while `listen` was still resolving; fed after `started`. */
   private readonly early: Input[] = [];
-  private handling = false;
   private ready = false;
   private stopped = false;
   private timer: Timer | null = null;
@@ -79,24 +77,16 @@ export class NodeDriver {
   }
 
   /**
-   * Queue `input` and drain the queue through the processor.
+   * Run one input through the processor, carry out its outputs, then re-arm
+   * the timer.
    *
-   * An input fed while `handle` is running (a nested call) is only queued;
-   * the outer call drains it, so inputs are handled in order and never
-   * re-entrantly. The timer is re-armed once the whole batch is done.
+   * Calls never nest, so inputs need no queue and are handled in the order
+   * they arrive: {@link Transport} never calls `onFrame` from inside `send`,
+   * and timer and send-failure callbacks always run later.
    */
   private feed(input: Input): void {
     if (this.stopped) return;
-    this.pending.push(input);
-    if (this.handling) return; // a nested call is drained by the outer loop
-    this.handling = true;
-    try {
-      for (let next = this.pending.shift(); next !== undefined; next = this.pending.shift()) {
-        for (const output of this.processor.handle(next)) this.execute(output);
-      }
-    } finally {
-      this.handling = false;
-    }
+    for (const output of this.processor.handle(input)) this.execute(output);
     this.rearmTimer();
   }
 
