@@ -18,6 +18,10 @@ export interface Server {
  * One TCP connection per frame: read to EOF, then report the peer.
  *
  * Implementations report the peer's IPv4 without the `::ffff:` prefix.
+ *
+ * `onFrame` must never be called synchronously from inside `send`: the driver
+ * handles one input at a time and does not queue a call that arrives while it
+ * is already handling one. Deliver on a later tick, as a real socket does.
  */
 export interface Transport {
   listen(port: number, onFrame: (frame: Uint8Array, peer: NodeAddress) => void): Promise<Server>;
@@ -36,10 +40,17 @@ export interface Interval {
   cancel(): void;
 }
 
+/** Cancellation handle returned by {@link Clock.after}. */
+export interface Timer {
+  cancel(): void;
+}
+
 /** Injected time, so timers and timeouts are testable. */
 export interface Clock {
   /** Milliseconds since the epoch. */
   now(): number;
+  /** Run `fn` once after `ms`; call `cancel()` to stop it. */
+  after(ms: number, fn: () => void): Timer;
   /** Run `tick` every `intervalMs`; call `cancel()` to stop. */
   every(intervalMs: number, tick: () => void): Interval;
 }
