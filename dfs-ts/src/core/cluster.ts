@@ -17,50 +17,48 @@ export interface ClusterMember {
   readonly lastSeen: number;
 }
 
-/** Membership set shared by the roles. */
-export interface Cluster {
+/** The id Rust calls `node_id`: an address formatted as `"ip:port"`. */
+export function memberKey(address: NodeAddress): string {
+  return `${address.ip}:${address.port}`;
+}
+
+/**
+ * Membership set shared by the roles.
+ *
+ * It never reads a clock: callers pass `now`, so a processor stays a pure
+ * function of its inputs.
+ */
+export class Cluster {
+  private readonly members = new Map<string, ClusterMember>();
+
   /**
    * Insert a member, or refresh an existing one, and stamp `lastSeen` with `now`.
    *
    * The role replaces the previous one, so a node that re-notifies with a new
    * role ends up with exactly that role.
    */
-  upsert(address: NodeAddress, role: Role, now: number): ClusterMember;
+  upsert(address: NodeAddress, role: Role, now: number): ClusterMember {
+    const member: ClusterMember = { address, role, lastSeen: now };
+    this.members.set(memberKey(address), member);
+    return member;
+  }
+
   /** Member at `address`, or `undefined` when unknown. */
-  get(address: NodeAddress): ClusterMember | undefined;
-  has(address: NodeAddress): boolean;
+  get(address: NodeAddress): ClusterMember | undefined {
+    return this.members.get(memberKey(address));
+  }
+
+  has(address: NodeAddress): boolean {
+    return this.members.has(memberKey(address));
+  }
+
   /** Snapshot of every member, in insertion order. Callers filter by role. */
-  list(): readonly ClusterMember[];
+  list(): readonly ClusterMember[] {
+    return [...this.members.values()];
+  }
+
   /** Drop a member; returns whether it existed. */
-  remove(address: NodeAddress): boolean;
-}
-
-/** The id Rust calls `node_id`: an address formatted as `"ip:port"`. */
-export function memberKey(address: NodeAddress): string {
-  return `${address.ip}:${address.port}`;
-}
-
-/** Create an empty membership set; callers pass the time, so it never reads a clock. */
-export function createCluster(): Cluster {
-  const members = new Map<string, ClusterMember>();
-
-  return {
-    upsert(address, role, now) {
-      const member: ClusterMember = { address, role, lastSeen: now };
-      members.set(memberKey(address), member);
-      return member;
-    },
-    get(address) {
-      return members.get(memberKey(address));
-    },
-    has(address) {
-      return members.has(memberKey(address));
-    },
-    list() {
-      return [...members.values()];
-    },
-    remove(address) {
-      return members.delete(memberKey(address));
-    },
-  };
+  remove(address: NodeAddress): boolean {
+    return this.members.delete(memberKey(address));
+  }
 }

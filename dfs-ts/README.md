@@ -36,5 +36,6 @@ Lands with M1.1 and later, per file: `core/` (`catalog.ts`, `data.ts`, `storage.
 - One package, no workspaces: `dfs-cli` and `xbutler-fe` consume `dfs-core`, they are not part of it.
 - `src/` stays runtime-agnostic, because the same code runs on Node.js and on React Native: use no `Buffer`, `node:*` modules, `setTimeout`, or `console`. `tsconfig.json` sets `"types": []`, so importing Node.js APIs fails the build instead of being caught in review.
 - I/O arrives through `driver/platform.ts` only, and only `NodeDriver` calls it; `core/` returns outputs instead of doing I/O.
-- Time comes from `Clock`, so timers are testable.
+- Time arrives as `now` in each input and as `nextDeadline()`, so timers are testable without mocks.
+- Where an older design note and `1128-redesign.md` disagree, the redesign wins: roles are `Processor` classes composed by the driver, never subclassed; `core/` never imports `driver/` (`test/layering.test.ts`).
 - Build with `tsc` (JS + `.d.ts`, no bundler); test with `bun test`.

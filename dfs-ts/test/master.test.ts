@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { createCluster } from "../src/core/cluster.ts";
+import { Cluster } from "../src/core/cluster.ts";
 import { DnsProcessor } from "../src/core/dns.ts";
 import { MasterProcessor } from "../src/core/master.ts";
 import { decode, encode } from "../src/protocol/codec.ts";
@@ -15,7 +15,7 @@ const STRANGER: NodeAddress = { ip: "10.0.0.7", port: 7003 };
 const NOW = 1_000;
 
 function setup() {
-  const cluster = createCluster();
+  const cluster = new Cluster();
   const master = new MasterProcessor(DNS, cluster);
   const frame = (packet: Packet, peer: NodeAddress, now = NOW) =>
     master.handle({ kind: "frame", bytes: encode(packet), peer, now });
@@ -43,7 +43,7 @@ describe("MasterProcessor", () => {
 
   test("the started notify registers the master on a DnsProcessor", () => {
     const { master } = setup();
-    const dnsCluster = createCluster();
+    const dnsCluster = new Cluster();
     const dns = new DnsProcessor(dnsCluster);
 
     const [notify] = master.handle({ kind: "started", port: MASTER.port, now: NOW });

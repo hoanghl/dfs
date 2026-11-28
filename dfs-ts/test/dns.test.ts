@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { createCluster } from "../src/core/cluster.ts";
+import { Cluster } from "../src/core/cluster.ts";
 import { DnsProcessor } from "../src/core/dns.ts";
 import type { Output } from "../src/core/processor.ts";
 import { decode, encode } from "../src/protocol/codec.ts";
@@ -18,7 +18,7 @@ const CLIENT: NodeAddress = { ip: "10.0.0.9", port: 50_123 };
 const NOW = 1_000;
 
 function setup() {
-  const cluster = createCluster();
+  const cluster = new Cluster();
   const dns = new DnsProcessor(cluster);
   const frame = (packet: Packet, peer: NodeAddress, now = NOW) =>
     dns.handle({ kind: "frame", bytes: encode(packet), peer, now });
