@@ -69,6 +69,7 @@ export function createManualClock(start = 1_000): ManualClock {
       timers.add(timer);
       return { cancel: () => void timers.delete(timer) };
     },
+    /** One-shot: fires once when `advance` passes `ms`, unless cancelled first. */
     after(ms, fn): Timer {
       const timer: Scheduled = { due: now + Math.max(0, ms), intervalMs: 0, tick: fn };
       timers.add(timer);

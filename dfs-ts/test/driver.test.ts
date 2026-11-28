@@ -17,15 +17,21 @@ const PEER: NodeAddress = { ip: "10.0.0.3", port: 7001 };
 const OTHER: NodeAddress = { ip: "10.0.0.4", port: 7002 };
 const BYTES = new Uint8Array([1, 2, 3]);
 
-/** A processor that records every input and answers from a script. */
+/**
+ * A processor that records every input and answers from a script.
+ *
+ * `deadline` is what `nextDeadline()` returns; tests set it directly.
+ */
 class ScriptedProcessor implements Processor {
   readonly inputs: Input[] = [];
   deadline: number | null = null;
   /** True while `handle` runs; a second `handle` starting inside one is a bug. */
   inside = false;
   reentered = false;
+  /** @param script Outputs to return for each input; none by default. */
   constructor(private readonly script: (input: Input) => Output[] = () => []) {}
 
+  /** Record `input`, flag re-entrant calls, and return the scripted outputs. */
   handle(input: Input): Output[] {
     if (this.inside) this.reentered = true;
     this.inside = true;
@@ -37,17 +43,26 @@ class ScriptedProcessor implements Processor {
     }
   }
 
+  /** The deadline a test has set, or `null` for none. */
   nextDeadline(): number | null {
     return this.deadline;
   }
 
+  /** Kinds of the inputs seen so far, in order. */
   get kinds(): string[] {
     return this.inputs.map((input) => input.kind);
   }
 }
 
+/** A `send` output carrying a fixed payload to `to`. */
 const send = (to: NodeAddress): Output => ({ kind: "send", to, bytes: BYTES });
 
+/**
+ * Build a driver on the memory platform.
+ *
+ * @param processor The processor under test.
+ * @param wrap Optionally wrap the memory transport to inject behaviour.
+ */
 function setup(processor: Processor, wrap: (inner: Transport) => Transport = (inner) => inner) {
   const network = createMemoryNetwork();
   const inner = network.createTransport(NODE_IP);
