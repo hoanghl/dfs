@@ -8,10 +8,11 @@
  * never reaches membership.
  */
 
-import { decode, encode } from "../protocol/codec.js";
-import { createNotify, PacketId } from "../protocol/packets.js";
+import { encode } from "../protocol/codec.js";
+import { createNotify, PacketId, type NotifyPacket, type Packet } from "../protocol/packets.js";
 import type { NodeAddress } from "../types.js";
 import type { Cluster } from "./cluster.js";
+import { onFrame, type FrameInput } from "./frame.js";
 import type { Input, Output, Processor } from "./processor.js";
 
 /** The Master role: joins through DNS on start, then records every `Notify` sender. */
@@ -27,35 +28,46 @@ export class MasterProcessor implements Processor {
 
   /** React to one input: notify DNS on `started`, record members from `Notify` frames. */
   handle(input: Input): Output[] {
-    if (input.kind === "started") {
-      // Advertise the bound port so a config of `0` still announces the real one.
-      return [
-        { kind: "send", to: this.dns, bytes: encode(createNotify("master", input.port)) },
-        {
-          kind: "log",
-          level: "info",
-          message: "master notified dns",
-          meta: { dns: this.dns, port: input.port },
-        },
-      ];
+    switch (input.kind) {
+      case "started":
+        return this.onStarted(input.port);
+      case "frame":
+        return onFrame(input, (packet) => this.onPacket(packet, input));
+      default:
+        return [];
     }
-    if (input.kind !== "frame") return [];
+  }
 
-    const result = decode(input.bytes);
-    if (!result.ok) {
-      return [
-        {
-          kind: "log",
-          level: "warn",
-          message: "dropped undecodable frame",
-          meta: { code: result.error.code, message: result.error.message, peer: input.peer },
-        },
-      ];
+  /** The Master has no timers until the M1.2 heartbeat. */
+  nextDeadline(): number | null {
+    return null;
+  }
+
+  /** Advertise the bound port so a config of `0` still announces the real one. */
+  private onStarted(port: number): Output[] {
+    return [
+      { kind: "send", to: this.dns, bytes: encode(createNotify("master", port)) },
+      {
+        kind: "log",
+        level: "info",
+        message: "master notified dns",
+        meta: { dns: this.dns, port },
+      },
+    ];
+  }
+
+  /** Route one decoded packet; packets the Master does not own are ignored. */
+  private onPacket(packet: Packet, input: FrameInput): Output[] {
+    switch (packet.id) {
+      case PacketId.Notify:
+        return this.onNotify(packet, input);
+      default:
+        return [];
     }
+  }
 
-    const packet = result.value;
-    if (packet.id !== PacketId.Notify) return [];
-
+  /** Record a master or data sender; dns and client roles are logged and ignored. */
+  private onNotify(packet: NotifyPacket, input: FrameInput): Output[] {
     if (packet.role !== "master" && packet.role !== "data") {
       return [
         {
@@ -78,10 +90,5 @@ export class MasterProcessor implements Processor {
         meta: { address: member.address, role: member.role },
       },
     ];
-  }
-
-  /** The Master has no timers until the M1.2 heartbeat. */
-  nextDeadline(): number | null {
-    return null;
   }
 }
