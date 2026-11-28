@@ -2,7 +2,7 @@
 
 Home of the DFS rewrite. The directory is `dfs-ts/`; the package it publishes is **`dfs-core`**, the library imported by `dfs-cli` and `xbutler-fe`.
 
-Status: **skeleton** (M1.0). Types and platform interfaces only — protocol code starts with M1.1.
+Status: **M1.1** (initialization). The wire codec, `NodeDriver` and the DNS, Master and Data processors are in: a Data node joins the cluster through DNS, and keeps retrying until a Master exists. `createClient` and the real TCP adapter come later.
 
 ## Commands
 
@@ -29,7 +29,7 @@ dfs-ts/
 └── test/             bun test
 ```
 
-Lands with M1.1 and later, per file: `core/` (`catalog.ts`, `data.ts`, `storage.ts`), `driver/outbox.ts` and `client.ts`.
+Lands with M1.1 and later, per file: `core/` (`catalog.ts`, `storage.ts`), `driver/outbox.ts` and `client.ts`.
 
 ## Rules
 
