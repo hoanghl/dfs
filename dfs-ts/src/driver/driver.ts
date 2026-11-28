@@ -8,7 +8,7 @@
  */
 
 import type { Input, Output, Processor } from "../core/processor.js";
-import type { Clock, Logger, Server, Timer, Transport } from "../platform.js";
+import type { Clock, Logger, Server, Timer, Transport } from "./platform.js";
 
 /**
  * Runs one {@link Processor} on a transport and a clock.

@@ -1,11 +1,12 @@
 /**
- * The only way core reaches outside itself.
+ * The only way the node reaches outside itself, used by the driver alone.
  *
  * Interfaces carry bytes and plain values, never packets: protocol knowledge
- * stays inside core. Adapters fail by rejecting; core decides what to do.
+ * stays inside `core/`. Adapters fail by rejecting; the driver turns that into
+ * a `sendFailed` input and the processor decides what to do.
  */
 
-import type { NodeAddress } from "./types.js";
+import type { NodeAddress } from "../types.js";
 
 /** Handle for an open inbound transport, returned by {@link Transport.listen}. */
 export interface Server {
@@ -35,11 +36,6 @@ export interface BlobStore {
   has(name: string): Promise<boolean>;
 }
 
-/** Cancellation handle returned by {@link Clock.every}. */
-export interface Interval {
-  cancel(): void;
-}
-
 /** Cancellation handle returned by {@link Clock.after}. */
 export interface Timer {
   cancel(): void;
@@ -51,8 +47,6 @@ export interface Clock {
   now(): number;
   /** Run `fn` once after `ms`; call `cancel()` to stop it. */
   after(ms: number, fn: () => void): Timer;
-  /** Run `tick` every `intervalMs`; call `cancel()` to stop. */
-  every(intervalMs: number, tick: () => void): Interval;
 }
 
 /** Structured logging; adapters decide where the lines go. */

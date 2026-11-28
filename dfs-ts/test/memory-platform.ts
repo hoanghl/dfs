@@ -3,7 +3,7 @@
  * recording logger. Test-only; nothing under `src/` imports this.
  */
 
-import type { BlobStore, Clock, Interval, Logger, Server, Timer, Transport } from "../src/platform.js";
+import type { BlobStore, Clock, Logger, Server, Timer, Transport } from "../src/driver/platform.js";
 import type { NodeAddress } from "../src/types.js";
 
 export interface MemoryNetwork {
@@ -52,8 +52,6 @@ export interface ManualClock extends Clock {
 
 interface Scheduled {
   due: number;
-  /** Zero for a one-shot timer from `after`. */
-  readonly intervalMs: number;
   readonly tick: () => void;
 }
 
@@ -63,15 +61,9 @@ export function createManualClock(start = 1_000): ManualClock {
 
   return {
     now: () => now,
-    every(intervalMs, tick): Interval {
-      if (intervalMs <= 0) throw new RangeError("interval must be positive");
-      const timer: Scheduled = { due: now + intervalMs, intervalMs, tick };
-      timers.add(timer);
-      return { cancel: () => void timers.delete(timer) };
-    },
     /** One-shot: fires once when `advance` passes `ms`, unless cancelled first. */
     after(ms, fn): Timer {
-      const timer: Scheduled = { due: now + Math.max(0, ms), intervalMs: 0, tick: fn };
+      const timer: Scheduled = { due: now + Math.max(0, ms), tick: fn };
       timers.add(timer);
       return { cancel: () => void timers.delete(timer) };
     },
@@ -84,8 +76,7 @@ export function createManualClock(start = 1_000): ManualClock {
         }
         if (next === undefined) break;
         now = next.due;
-        if (next.intervalMs > 0) next.due += next.intervalMs;
-        else timers.delete(next);
+        timers.delete(next);
         next.tick();
       }
       now = target;

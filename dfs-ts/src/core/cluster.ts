@@ -6,27 +6,26 @@
  * `lastSeen` to mark a node down after two missed heartbeats.
  */
 
-import type { Clock } from "./platform.js";
-import type { NodeAddress, Role } from "./types.js";
+import type { NodeAddress, Role } from "../types.js";
 
 /** One node the cluster knows about. */
 export interface ClusterMember {
   /** Address the node listens on; also the map key. */
   readonly address: NodeAddress;
   readonly role: Role;
-  /** `clock.now()` at the last upsert; the heartbeat timer will read it. */
+  /** `now` at the last upsert, in epoch milliseconds; the heartbeat timer will read it. */
   readonly lastSeen: number;
 }
 
 /** Membership set shared by the roles. */
 export interface Cluster {
   /**
-   * Insert a member, or refresh an existing one, and stamp `lastSeen`.
+   * Insert a member, or refresh an existing one, and stamp `lastSeen` with `now`.
    *
    * The role replaces the previous one, so a node that re-notifies with a new
    * role ends up with exactly that role.
    */
-  upsert(address: NodeAddress, role: Role): ClusterMember;
+  upsert(address: NodeAddress, role: Role, now: number): ClusterMember;
   /** Member at `address`, or `undefined` when unknown. */
   get(address: NodeAddress): ClusterMember | undefined;
   has(address: NodeAddress): boolean;
@@ -41,13 +40,13 @@ export function memberKey(address: NodeAddress): string {
   return `${address.ip}:${address.port}`;
 }
 
-/** Create an empty membership set that reads time from `clock`. */
-export function createCluster(clock: Clock): Cluster {
+/** Create an empty membership set; callers pass the time, so it never reads a clock. */
+export function createCluster(): Cluster {
   const members = new Map<string, ClusterMember>();
 
   return {
-    upsert(address, role) {
-      const member: ClusterMember = { address, role, lastSeen: clock.now() };
+    upsert(address, role, now) {
+      const member: ClusterMember = { address, role, lastSeen: now };
       members.set(memberKey(address), member);
       return member;
     },

@@ -7,4 +7,4 @@
  */
 
 export type { NodeAddress, NodeConfig, Role } from "./types.js";
-export type { BlobStore, Clock, Interval, Logger, Server, Transport } from "./platform.js";
+export type { BlobStore, Clock, Logger, Server, Timer, Transport } from "./driver/platform.js";
